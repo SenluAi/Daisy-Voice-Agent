@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/forestai123456/Daisy-Voice-Agent/releases">下载</a> ·
+  <a href="https://github.com/SenluAi/Daisy-Voice-Agent/releases">下载</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#能为你做什么">能力一览</a> ·
   <a href="#隐私与安全">隐私与安全</a>
@@ -74,7 +74,7 @@ Daisy 是运行在桌面端的轻量语音助手：一个始终可调用的悬�
 
 ### 1. 安装
 
-前往 [Releases 页面](https://github.com/forestai123456/Daisy-Voice-Agent/releases) 下载适合你系统的安装包：
+前往 [Releases 页面](https://github.com/SenluAi/Daisy-Voice-Agent/releases) 下载适合你系统的安装包：
 
 - **macOS (Apple Silicon)**: 下载 `Daisy-*-arm64.dmg`，打开后将 **Daisy** 拖入“应用程序”文件夹。
   > 首次运行若被 macOS 拦截：在“应用程序”中按住 `Control` 点击 Daisy，选择“打开”，再在确认框中点击“打开”；必要时可前往“系统设置 → 隐私与安全性”选择“仍要打开”。
@@ -99,7 +99,7 @@ Daisy 是运行在桌面端的轻量语音助手：一个始终可调用的悬�
 环境要求：Node.js 22 或更新版本，以及 npm。
 
 ```bash
-git clone https://github.com/forestai123456/Daisy-Voice-Agent.git
+git clone https://github.com/SenluAi/Daisy-Voice-Agent.git
 cd Daisy-Voice-Agent
 npm install
 cp .env.example daisy.env
