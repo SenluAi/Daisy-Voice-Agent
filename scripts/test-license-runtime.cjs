@@ -49,7 +49,7 @@ const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'daisy-license-runtime-'
     await settings.getByRole('button', { name: '模型配置', exact: true }).waitFor();
     const restored = await application.evaluate(() => ({ ...global.__licenseRuntimeTest.stats }));
     assert.equal(restored.pluginsActive, true); assert.equal(restored.wakeActive, true); assert.equal(restored.shortcuts, before.shortcuts + 1);
-    await settings.evaluate(() => window.diriAPI.sendText('再问一个问题')); await settings.waitForTimeout(250);
+    await application.evaluate(() => global.__licenseRuntimeTest.enqueue()); await settings.waitForTimeout(500);
     assert.equal(await application.evaluate(() => global.__licenseRuntimeTest.stats.llmStarted), 2);
     console.log(JSON.stringify({ result: 'PASS real main-process lock and recovery, real settings UI and running PowerShell cancellation',
       isolation: 'temporary userData; simulated license, speech, LLM and plugin services; no microphone or real redemption', screenshot }));

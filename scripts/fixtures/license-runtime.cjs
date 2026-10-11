@@ -14,6 +14,7 @@ let status = { allowed: true, accessState: 'trial', activated: false,
   leaseExpiresAt: Date.now() + 86400000, accessMessage: '七天试用中', filePath: '' };
 const stats = { recording: false, recordingStopped: 0, shortcuts: 0, shortcutDestroyed: 0,
   wakeActive: false, wakeStopped: 0, pluginsActive: false, pluginsClosed: 0, llmStarted: 0, llmAborted: 0, ttsStarted: 0, ttsStopped: 0 };
+let pluginPrompt;
 function publish() {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channels.LICENSE_CHANGED, status);
   notify?.();
@@ -61,7 +62,7 @@ Object.assign(load('tts/edgeTTS'), {
   },
 });
 Object.assign(load('extensions/manager'), {
-  initializeExtensions: () => { stats.pluginsActive = true; },
+  initializeExtensions: (_root, onPrompt) => { stats.pluginsActive = true; pluginPrompt = onPrompt; },
   closeExtensions: () => { stats.pluginsActive = false; stats.pluginsClosed++; },
   extensionPrompt: () => '', refreshExtensionSpeechProviders: () => {},
 });
@@ -71,5 +72,6 @@ global.__licenseRuntimeTest = {
   stats,
   expire: () => { status = { ...status, allowed: false, accessState: 'expired', remainingTrialMs: 0, accessMessage: '七天试用已到期，请输入兑换码激活后继续使用' }; publish(); },
   activate: () => { status = { ...status, allowed: true, activated: true, accessState: 'activated', accessMessage: '授权有效' }; publish(); },
+  enqueue: () => pluginPrompt({ pluginId: 'test', text: '测试插件恢复后的对话队列' }),
 };
 require(path.join(base, 'index'));

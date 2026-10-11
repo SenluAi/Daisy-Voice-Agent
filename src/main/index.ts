@@ -492,6 +492,7 @@ function handleLicenseChange(): void {
       licensedRuntimeActive = false;
       pluginConversationQueue.cancel();
       abortAllTasks();
+      updateState("idle");
       globalShortcut?.destroy();
       globalShortcut = null;
       wakeWordMonitor?.stop();
@@ -501,6 +502,7 @@ function handleLicenseChange(): void {
       getHistoryWindow()?.close();
       hideFloatWindow();
       hidePanelWindow();
+      isOrbVisible = false;
       if (shortcutListenerRestartTimer) clearTimeout(shortcutListenerRestartTimer);
       shortcutListenerRestartTimer = null;
       log("License access locked; assistant runtime stopped");
