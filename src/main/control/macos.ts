@@ -310,20 +310,6 @@ export async function writeClipboardText(text: string): Promise<string> {
   }
 }
 
-export async function copyFileToClipboard(filePath: string): Promise<string> {
-  const resolved = path.resolve(expandPath(filePath));
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-    return `复制文件失败: 文件不存在：${resolved}`;
-  }
-  try {
-    const escaped = resolved.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    await runAppleScript(`set the clipboard to (POSIX file "${escaped}")`);
-    return `已将文件附件复制到剪贴板：${resolved}`;
-  } catch (error) {
-    return `复制文件失败: ${error instanceof Error ? error.message : String(error)}`;
-  }
-}
-
 export async function sendEmail(to: string, subject: string, body: string): Promise<string> {
   const script = `
 tell application "Mail"
@@ -1387,14 +1373,6 @@ export async function executeTool(name: string, argsJson: string): Promise<strin
     log(`executeTool: ${name} with args ${argsJson}`);
 
     switch (name) {
-      case "screen_snapshot": {
-        const { savePrimaryScreenSnapshot } = await import("../vision/screenCapture");
-        const { getFloatWindow } = await import("../windows/floatWindow");
-        const { getPanelWindow } = await import("../windows/panelWindow");
-        const snapshot = await savePrimaryScreenSnapshot([getFloatWindow(), getPanelWindow()], "observe");
-        const frontmost = await getFrontmostApplication();
-        return `已读取当前屏幕。\n前台应用：${frontmost}\n截图：${snapshot.path}\n尺寸：${snapshot.width}x${snapshot.height}`;
-      }
       case "web_search": {
         const { webSearch } = await import("./search");
         return await webSearch(String(args.query));
@@ -1419,10 +1397,6 @@ export async function executeTool(name: string, argsJson: string): Promise<strin
         return await typeText(String(args.text));
       case "press_keys":
         return await pressKeys(String(args.keys));
-      case "open_contact_chat":
-      case "stage_file_attachment":
-      case "confirm_staged_attachment":
-        return `${name} 目前仅支持 Windows`;
       case "get_frontmost_application":
         return await getFrontmostApplication();
       case "read_selected_text":
@@ -1431,8 +1405,6 @@ export async function executeTool(name: string, argsJson: string): Promise<strin
         return await getClipboardText();
       case "write_clipboard_text":
         return await writeClipboardText(String(args.text));
-      case "copy_file_to_clipboard":
-        return await copyFileToClipboard(String(args.path));
       case "get_current_time":
         return await getCurrentTime();
       case "weather_forecast": {

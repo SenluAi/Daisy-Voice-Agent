@@ -3,7 +3,6 @@ import path from "node:path";
 import { ChatMessage, DeepSeekClient } from "./deepseek";
 import { SYSTEM_PROMPT } from "./system-prompt";
 import { stripFinderSelectionContext } from "../control/finderSelection";
-import { buildShortTermMemoryContext } from "../memory/shortTermMemory";
 
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_HISTORY_TOKENS_ESTIMATE = 20000;
@@ -17,8 +16,7 @@ function getSystemPromptWithEnv(): string {
     const weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
     const weekday = weekdays[now.getDay()];
     const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekday} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    const memoryContext = buildShortTermMemoryContext();
-    return `${SYSTEM_PROMPT}\n\n当前运行环境信息：\n- 当前时间 (Current Time): ${dateStr}\n- 当前用户名 (Username): "${username}"\n- 用户主目录 (Home Directory): "${homedir}"\n- 桌面路径 (Desktop Path): "${desktop}"${memoryContext ? `\n\n${memoryContext}` : ""}`;
+    return `${SYSTEM_PROMPT}\n\n当前运行环境信息：\n- 当前时间 (Current Time): ${dateStr}\n- 当前 macOS 用户名 (Username): "${username}"\n- 用户主目录 (Home Directory): "${homedir}"\n- 桌面路径 (Desktop Path): "${desktop}"`;
   } catch (err) {
     return SYSTEM_PROMPT;
   }

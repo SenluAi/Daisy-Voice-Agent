@@ -1,10 +1,8 @@
 import { ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { log, logError } from "../utils/logger";
-import { getBundledBin } from "../config/env";
 
 const NAMED_VIRTUAL_KEYS: Record<string, number> = {
-  fn: 0xff,
   backspace: 0x08,
   tab: 0x09,
   enter: 0x0d,
@@ -168,11 +166,6 @@ export class WinKeyStatePoller extends EventEmitter {
   private wakeVks: number[] = [];
   private running = false;
   private paused = false;
-  private nativeSpaceListener = false;
-
-  get usesNativeSpaceHold(): boolean {
-    return this.nativeSpaceListener;
-  }
 
   start(wakeShortcut: string): boolean {
     const wakeVks = resolveShortcutVks(wakeShortcut);
@@ -187,7 +180,6 @@ export class WinKeyStatePoller extends EventEmitter {
       return false;
     }
     this.wakeVks = wakeVks;
-    this.nativeSpaceListener = wakeVks.length === 1 && wakeVks[0] === 0x20;
     this.running = true;
     this.restartProcess();
     setTimeout(() => {
@@ -220,17 +212,15 @@ export class WinKeyStatePoller extends EventEmitter {
 
   private spawnProc(): void {
     if (!this.running || this.wakeVks.length === 0) return;
-    const script = this.nativeSpaceListener ? "" : buildPollerScript(this.wakeVks);
-    const encoded = script ? Buffer.from(script, "utf16le").toString("base64") : "";
+    const script = buildPollerScript(this.wakeVks);
+    const encoded = Buffer.from(script, "utf16le").toString("base64");
     try {
       const proc = spawn(
-        this.nativeSpaceListener ? getBundledBin("daisy-space-hold-listener") : "powershell.exe",
-        this.nativeSpaceListener ? [] : ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-        { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+        { windowsHide: true },
       );
       this.proc = proc;
-      proc.stdin?.on("error", () => { /* The listener may exit during reconfiguration. */ });
-      if (this.nativeSpaceListener && this.paused) proc.stdin?.write("PAUSE\n");
       let buffer = "";
       let stderrBuffer = "";
       proc.stdout?.setEncoding("utf8");
@@ -244,7 +234,6 @@ export class WinKeyStatePoller extends EventEmitter {
           if (this.paused) continue;
           if (line === "WAKE_DOWN") this.emit("pressed");
           else if (line === "WAKE_UP") this.emit("released");
-          else if (line.startsWith("ERROR:")) this.emit("listener-error", `Space 按键监听错误：${line}`);
         }
       });
       proc.stderr?.setEncoding("utf8");
@@ -276,7 +265,7 @@ export class WinKeyStatePoller extends EventEmitter {
         this.scheduleRestart();
       });
       log(
-        `[winKeyPoller] ${this.nativeSpaceListener ? "intercepted Space hold" : "physical key polling"} started wake=${this.wakeVks.join("+")}`,
+        `[winKeyPoller] physical key polling started wake=${this.wakeVks.join("+")}`,
       );
     } catch (error) {
       logError("[winKeyPoller] spawn failed", error);
@@ -296,9 +285,6 @@ export class WinKeyStatePoller extends EventEmitter {
 
   setPaused(paused: boolean): void {
     this.paused = paused;
-    if (this.nativeSpaceListener && this.proc?.stdin?.writable) {
-      try { this.proc.stdin.write(paused ? "PAUSE\n" : "RESUME\n"); } catch { /* A restarting listener will use the current state. */ }
-    }
   }
 
   kill(): void {

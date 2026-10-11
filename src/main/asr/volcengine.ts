@@ -16,23 +16,17 @@ const Serialization = { JSON: 0b0001 };
 const Compression = { GZIP: 0b0001 };
 
 export interface AsrCredentials {
-  apiKey?: string;
   appId: string;
   accessToken: string;
   resourceId: string;
 }
 
 export function buildRequestHeaders(credentials: AsrCredentials) {
-  const authHeaders = credentials.apiKey
-    ? { "X-Api-Key": credentials.apiKey }
-    : {
-      "X-Api-App-Key": credentials.appId,
-      "X-Api-Access-Key": credentials.accessToken,
-    };
-
   return {
-    ...authHeaders,
+    "X-Api-App-Key": credentials.appId,
+    "X-Api-Access-Key": credentials.accessToken,
     "X-Api-Resource-Id": credentials.resourceId,
+    "X-Api-Request-Id": randomUUID(),
     "X-Api-Connect-Id": randomUUID(),
   };
 }

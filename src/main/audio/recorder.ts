@@ -183,14 +183,16 @@ export function ensureAudioWindow(): BrowserWindow {
     },
   });
 
+  audioWindow.loadFile(path.join(__dirname, "../../renderer/audio.html"));
+
   audioWindow.webContents.on("did-finish-load", () => {
     isReady = true;
     log("[recorder] audio window loaded");
     sendToAudioWindow(IPC_CHANNELS.AUDIO_WAKE_WORD_ENABLED, wakeWordCaptureEnabled);
     // If we were waiting for the window to load to send START_RECORDING
     if (currentState === RecorderState.STARTING) {
-      log(`[recorder] audio window loaded while STARTING. Sending START_RECORDING generation=${activeRecordingGeneration}.`);
-      sendToAudioWindow(IPC_CHANNELS.START_RECORDING, activeRecordingGeneration);
+      log("[recorder] audio window loaded while STARTING. Sending START_RECORDING.");
+      sendToAudioWindow(IPC_CHANNELS.START_RECORDING);
     }
   });
 
@@ -198,8 +200,6 @@ export function ensureAudioWindow(): BrowserWindow {
     audioWindow = null;
     isReady = false;
   });
-
-  void audioWindow.loadFile(path.join(__dirname, "../../renderer/audio.html"));
 
   return audioWindow;
 }
@@ -274,12 +274,7 @@ export function startRecording(): void {
       }
     }
   }, 10000);
-  const win = ensureAudioWindow();
-  if (isReady && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-    win.webContents.send(IPC_CHANNELS.START_RECORDING, activeRecordingGeneration);
-  } else {
-    log(`[recorder] Waiting for audio window before START_RECORDING generation=${activeRecordingGeneration}.`);
-  }
+  sendToAudioWindow(IPC_CHANNELS.START_RECORDING, activeRecordingGeneration);
 }
 
 export function stopRecording(): void {

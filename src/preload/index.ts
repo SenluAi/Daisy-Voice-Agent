@@ -1,48 +1,13 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "../main/ipc/channels";
-import type { ExtensionRequestAPI } from "../shared/extensions";
-
-export interface TaskActivitySnapshot {
-  updatedAt: number;
-  tasks: Array<{
-    request: string;
-    status: "pending" | "completed" | "blocked";
-    result?: string;
-    updatedAt: number;
-  }>;
-  files: string[];
-  applications: string[];
-  pages: string[];
-  preferences: string[];
-  logs: string[];
-}
-
-export interface LongTermMemorySnapshot {
-  retentionDays: 30;
-  entries: Array<{
-    id: string;
-    category: "profile" | "preference" | "task";
-    text: string;
-    status: "active";
-    createdAt: number;
-    updatedAt: number;
-  }>;
-  counts: Record<"profile" | "preference" | "task", number>;
-}
 
 export interface DiriAPI {
-  extensionsRequest: ExtensionRequestAPI;
   // Send commands to main
   startRecording: () => void;
   stopRecording: () => void;
   sendText: (text: string) => void;
-  sendDroppedFiles: (paths: string[]) => void;
-  getPathForFile: (file: File) => string;
   openSettings: () => void;
   closeSettings: () => void;
-  onSettingsNavigate: (callback: (section: "llm" | "tasks") => void) => () => void;
-  openHistory: () => void;
-  closeHistory: () => void;
   getConfig: () => Promise<Record<string, string>>;
   updateConfig: (cfg: Record<string, string>) => Promise<boolean>;
   quitApp: () => void;
@@ -57,22 +22,10 @@ export interface DiriAPI {
   sendAudioReady: (generation?: number) => void;
   sendAudioStopped: (generation?: number) => void;
 
-  // Sherpa-ONNX model management
-  getSherpaStatus: () => Promise<{
-    installed: boolean;
-    modelReady: boolean;
-    modelDir: string;
-    modelName: string;
-    encoderExists: boolean;
-    decoderExists: boolean;
-    tokensExists: boolean;
-    numThreads: number;
-    blockSize: number;
-    wechatInstalled: boolean;
-    url: string;
-  }>;
-  downloadSherpaModel: () => void;
-  onSherpaDownloadProgress: (callback: (progress: { percent: number; status: string }) => void) => () => void;
+  // Whisper model management
+  getWhisperStatus: (modelName?: string) => Promise<{ cliInstalled: boolean; modelExists: boolean; modelPath: string; modelName: string }>;
+  downloadWhisperModel: (modelName: string) => void;
+  onWhisperDownloadProgress: (callback: (progress: { percent: number; status: string }) => void) => () => void;
 
   // Shortcut capture
   captureShortcut: (mode: "single" | "combo") => void;
@@ -86,13 +39,6 @@ export interface DiriAPI {
   // Conversation history
   getChatHistory: () => Promise<Array<{ sender: "user" | "daisy"; text: string; timestamp: number }>>;
   clearChatHistory: () => Promise<void>;
-  onChatHistoryUpdated: (
-    callback: (history: Array<{ sender: "user" | "daisy"; text: string; timestamp: number }>) => void
-  ) => () => void;
-
-  getTaskActivity: () => Promise<TaskActivitySnapshot>;
-  getLongTermMemory: () => Promise<LongTermMemorySnapshot>;
-  deleteLongTermMemories: (ids: string[]) => Promise<number>;
 
   // App update
   getAppVersion: () => Promise<string>;
@@ -122,16 +68,11 @@ export interface DiriAPI {
   onStateUpdate: (callback: (state: string) => void) => () => void;
   onShowWindow: (callback: () => void) => () => void;
   onHideWindow: (callback: () => void) => () => void;
-  onPanelStartSpeaking: (callback: (text: string) => void) => () => void;
   onStartRecording: (callback: () => void) => () => void;
   onStopRecording: (callback: () => void) => () => void;
   onWakeWordEnabled: (callback: (enabled: boolean) => void) => () => void;
-  onLiveCaptureEnabled: (callback: (enabled: boolean) => void) => () => void;
-  onLiveExternalPlayback: (callback: (active: boolean) => void) => () => void;
-  sendLiveUserActivity: (active: boolean) => void;
   setIgnoreMouse: (ignore: boolean) => void;
   resizeFloatWindow: (width: number, height: number) => void;
-  resizePanelWindow: (width: number, height: number) => void;
   lockPanelOpen: () => void;
 }
 
@@ -145,31 +86,12 @@ function createListener<T>(channel: string) {
   };
 }
 
-let latestSettingsSection: "llm" | "tasks" | null = null;
-const settingsSectionListeners = new Set<(section: "llm" | "tasks") => void>();
-ipcRenderer.on(IPC_CHANNELS.SETTINGS_NAVIGATE, (_event, section: "llm" | "tasks") => {
-  latestSettingsSection = section;
-  for (const listener of settingsSectionListeners) listener(section);
-});
-
-function onSettingsNavigate(callback: (section: "llm" | "tasks") => void): () => void {
-  settingsSectionListeners.add(callback);
-  if (latestSettingsSection) queueMicrotask(() => callback(latestSettingsSection!));
-  return () => settingsSectionListeners.delete(callback);
-}
-
 const api: DiriAPI = {
-  extensionsRequest: (action, input) => ipcRenderer.invoke(IPC_CHANNELS.EXTENSIONS_REQUEST, action, input),
   startRecording: () => ipcRenderer.send(IPC_CHANNELS.START_RECORDING),
   stopRecording: () => ipcRenderer.send(IPC_CHANNELS.STOP_RECORDING),
   sendText: (text: string) => ipcRenderer.send(IPC_CHANNELS.SEND_TEXT, text),
-  sendDroppedFiles: (paths: string[]) => ipcRenderer.send(IPC_CHANNELS.FILES_DROPPED, paths),
-  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   openSettings: () => ipcRenderer.send(IPC_CHANNELS.OPEN_SETTINGS),
   closeSettings: () => ipcRenderer.send(IPC_CHANNELS.CLOSE_SETTINGS),
-  onSettingsNavigate,
-  openHistory: () => ipcRenderer.send(IPC_CHANNELS.OPEN_HISTORY),
-  closeHistory: () => ipcRenderer.send(IPC_CHANNELS.CLOSE_HISTORY),
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CONFIG),
   updateConfig: (cfg: Record<string, string>) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CONFIG, cfg),
   quitApp: () => ipcRenderer.send(IPC_CHANNELS.QUIT_APP),
@@ -183,9 +105,9 @@ const api: DiriAPI = {
   sendAudioReady: (generation = 0) => ipcRenderer.send("audio:ready", generation),
   sendAudioStopped: (generation = 0) => ipcRenderer.send("audio:stopped", generation),
 
-  getSherpaStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SHERPA_STATUS),
-  downloadSherpaModel: () => ipcRenderer.send(IPC_CHANNELS.SHERPA_DOWNLOAD),
-  onSherpaDownloadProgress: createListener<{ percent: number; status: string }>(IPC_CHANNELS.SHERPA_DOWNLOAD_PROGRESS),
+  getWhisperStatus: (modelName?: string) => ipcRenderer.invoke(IPC_CHANNELS.WHISPER_STATUS, modelName),
+  downloadWhisperModel: (modelName: string) => ipcRenderer.send(IPC_CHANNELS.WHISPER_DOWNLOAD, modelName),
+  onWhisperDownloadProgress: createListener<{ percent: number; status: string }>(IPC_CHANNELS.WHISPER_DOWNLOAD_PROGRESS),
 
   captureShortcut: (mode: "single" | "combo") => ipcRenderer.send(IPC_CHANNELS.SHORTCUT_CAPTURE, mode),
   cancelShortcutCapture: () => ipcRenderer.send(IPC_CHANNELS.SHORTCUT_CAPTURE_CANCEL),
@@ -196,10 +118,6 @@ const api: DiriAPI = {
 
   getChatHistory: () => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_GET),
   clearChatHistory: () => ipcRenderer.invoke(IPC_CHANNELS.HISTORY_CLEAR),
-  onChatHistoryUpdated: createListener<Array<{ sender: "user" | "daisy"; text: string; timestamp: number }>>(IPC_CHANNELS.HISTORY_UPDATED),
-  getTaskActivity: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_ACTIVITY_GET),
-  getLongTermMemory: () => ipcRenderer.invoke(IPC_CHANNELS.LONG_TERM_MEMORY_GET),
-  deleteLongTermMemories: (ids: string[]) => ipcRenderer.invoke(IPC_CHANNELS.LONG_TERM_MEMORY_DELETE, ids),
 
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
   checkForUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
@@ -219,16 +137,11 @@ const api: DiriAPI = {
   onStateUpdate: createListener<string>(IPC_CHANNELS.STATE_UPDATE),
   onShowWindow: createListener(IPC_CHANNELS.SHOW_WINDOW),
   onHideWindow: createListener(IPC_CHANNELS.HIDE_WINDOW),
-  onPanelStartSpeaking: createListener<string>("panel:start-speaking"),
   onStartRecording: createListener(IPC_CHANNELS.START_RECORDING),
   onStopRecording: createListener(IPC_CHANNELS.STOP_RECORDING),
   onWakeWordEnabled: createListener<boolean>(IPC_CHANNELS.AUDIO_WAKE_WORD_ENABLED),
-  onLiveCaptureEnabled: createListener<boolean>("audio:live-capture-enabled"),
-  onLiveExternalPlayback: createListener<boolean>("audio:live-external-playback"),
-  sendLiveUserActivity: (active: boolean) => ipcRenderer.send("audio:live-user-activity", active),
   setIgnoreMouse: (ignore: boolean) => ipcRenderer.send("window:set-ignore-mouse", ignore),
   resizeFloatWindow: (width: number, height: number) => ipcRenderer.send("window:resize-float", width, height),
-  resizePanelWindow: (width: number, height: number) => ipcRenderer.send("window:resize-panel", width, height),
   lockPanelOpen: () => ipcRenderer.send("window:lock-panel-open"),
 };
 

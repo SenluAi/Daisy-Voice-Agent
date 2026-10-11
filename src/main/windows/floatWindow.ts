@@ -15,20 +15,6 @@ import {
 let floatWindow: BrowserWindow | null = null;
 
 let hideTimeout: NodeJS.Timeout | null = null;
-let mousePassthroughDepth = 0;
-
-export async function withFloatMousePassthrough<T>(operation: () => Promise<T>): Promise<T> {
-  mousePassthroughDepth += 1;
-  try {
-    if (floatWindow && !floatWindow.isDestroyed()) floatWindow.setIgnoreMouseEvents(true, { forward: true });
-    return await operation();
-  } finally {
-    mousePassthroughDepth -= 1;
-    if (floatWindow && !floatWindow.isDestroyed()) {
-      floatWindow.setIgnoreMouseEvents(mousePassthroughDepth > 0, { forward: true });
-    }
-  }
-}
 
 /**
  * Fullscreen macOS apps live in their own Space. Re-assert the overlay
@@ -91,10 +77,7 @@ export function createFloatWindow(): BrowserWindow {
   // own full-screen capture path hides the orb only for that single frame.
   floatWindow.setAlwaysOnTop(true, "screen-saver", 1);
   configureMacOSOverlay(floatWindow);
-  // Keep the tiny orb interactive so Windows can deliver drag-and-drop files.
-  // The window itself is only the orb-sized hit area, so it does not blanket
-  // the desktop while idle.
-  floatWindow.setIgnoreMouseEvents(mousePassthroughDepth > 0, { forward: true });
+  floatWindow.setIgnoreMouseEvents(true);
 
   if (process.platform === "win32") {
     floatWindow.setContentProtection(true);
@@ -134,7 +117,6 @@ export function showFloatWindow(): void {
 
   // 2. Show the window immediately to eliminate visual delay!
   floatWindow.showInactive();
-  floatWindow.setIgnoreMouseEvents(mousePassthroughDepth > 0, { forward: true });
   raiseMacOSOverlay(floatWindow);
   floatWindow.moveTop();
 

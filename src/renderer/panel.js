@@ -1,20 +1,8 @@
 /* global diriAPI */
 
 // ── 运行与面板状态 ──
-const BASE_PANEL_WIDTH = 260;
-const BASE_PANEL_HEIGHT = 74;
-const PANEL_TOP = 134;
-const PANEL_WINDOW_MIN_WIDTH = 720;
-const PANEL_WINDOW_MIN_HEIGHT = 360;
-const PANEL_WINDOW_MARGIN_X = 120;
-const PANEL_WINDOW_MARGIN_BOTTOM = 54;
-const PANEL_MAX_WIDTH = 920;
-const PANEL_MAX_HEIGHT = 600;
-const PANEL_SCROLL_LINE_THRESHOLD = 6;
-
-let panelWidth = BASE_PANEL_WIDTH;
-let panelHeight = BASE_PANEL_HEIGHT;
-let panelRadius = BASE_PANEL_HEIGHT / 2;
+let panelWidth = 260;
+let panelHeight = 74;
 let currentText = "";
 let isDragging = false;
 let typewriterTimeout = null;
@@ -30,108 +18,8 @@ const droppingWetPeriodic = document.getElementById("droppingWetPeriodic");
 const liquidPanel = document.getElementById("liquidPanel");
 const panelContent = document.getElementById("panelContent");
 const panelText = document.getElementById("panelText");
-const panelTextScroll = document.querySelector(".panel-text-scroll");
 
 const lerp = (a, b, t) => a + (b - a) * t;
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-function normalizePanelText(text) {
-  return (text || "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/\n[ \t]*\n+/g, "\n")
-    .replace(/\\n(?:[ \t]*\\n)+/g, "\\n");
-}
-
-function getPanelLimits() {
-  const displayWidth = window.screen?.availWidth || window.innerWidth || 1280;
-  const displayHeight = window.screen?.availHeight || window.innerHeight || 720;
-  return {
-    maxWidth: clamp(displayWidth - 96, BASE_PANEL_WIDTH, PANEL_MAX_WIDTH),
-    maxHeight: clamp(displayHeight - PANEL_TOP - PANEL_WINDOW_MARGIN_BOTTOM - 32, BASE_PANEL_HEIGHT, PANEL_MAX_HEIGHT),
-  };
-}
-
-function getTextLayout(text) {
-  const compactLength = text.replace(/\s+/g, "").length;
-  return {
-    fontSize:
-      compactLength > 900 ? 12 :
-      compactLength > 560 ? 12.5 :
-      compactLength > 320 ? 13 :
-      14,
-    paddingX: compactLength > 90 ? 52 : 30,
-    paddingY: compactLength > 90 ? 30 : 22,
-  };
-}
-
-function measureTextHeight(text, contentWidth, fontSize) {
-  const measurer = document.createElement("div");
-  measurer.className = "panel-text";
-  measurer.style.position = "absolute";
-  measurer.style.visibility = "hidden";
-  measurer.style.pointerEvents = "none";
-  measurer.style.left = "-9999px";
-  measurer.style.top = "0";
-  measurer.style.width = `${contentWidth}px`;
-  measurer.style.fontSize = `${fontSize}px`;
-  measurer.textContent = text.replace(/\\n/g, "\n");
-  document.body.appendChild(measurer);
-  const height = Math.ceil(measurer.scrollHeight);
-  measurer.remove();
-  return height;
-}
-
-function computePanelRadius(width, height) {
-  return height <= 120 && width <= 360
-    ? Math.min(width, height) / 2
-    : Math.round(clamp(height * 0.32, 44, 86));
-}
-
-function calculatePanelSize(text) {
-  const displayText = normalizePanelText(text);
-  const limits = getPanelLimits();
-  const layout = getTextLayout(displayText);
-  const compactLength = displayText.replace(/\s+/g, "").length;
-  const desiredContentWidth =
-    compactLength <= 22 ? 220 :
-    compactLength <= 48 ? 300 :
-    compactLength <= 90 ? 420 :
-    compactLength <= 180 ? 620 :
-    760;
-  const horizontalPadding = layout.paddingX * 2;
-  const verticalPadding = layout.paddingY * 2;
-  const contentWidth = clamp(desiredContentWidth, 188, limits.maxWidth - horizontalPadding);
-  const measuredTextHeight = measureTextHeight(displayText, contentWidth, layout.fontSize);
-  const lineHeight = layout.fontSize * 1.5;
-  const measuredLineCount = Math.max(1, Math.ceil(measuredTextHeight / lineHeight));
-  const scrollEnabled = measuredLineCount > PANEL_SCROLL_LINE_THRESHOLD;
-  const visibleTextHeight = scrollEnabled
-    ? Math.ceil(lineHeight * PANEL_SCROLL_LINE_THRESHOLD + 2)
-    : measuredTextHeight;
-  const width = clamp(contentWidth + horizontalPadding, BASE_PANEL_WIDTH, limits.maxWidth);
-  const height = clamp(visibleTextHeight + verticalPadding, BASE_PANEL_HEIGHT, limits.maxHeight);
-  const radius = computePanelRadius(width, height);
-  return { width, height, radius, scrollEnabled, measuredLineCount, ...layout };
-}
-
-function applyPanelLayout(size) {
-  panelRadius = size.radius;
-  liquidPanel.style.setProperty("--panel-radius", `${size.radius}px`);
-  liquidPanel.style.setProperty("--panel-padding-x", `${size.paddingX}px`);
-  liquidPanel.style.setProperty("--panel-padding-y", `${size.paddingY}px`);
-  liquidPanel.style.setProperty("--panel-font-size", `${size.fontSize}px`);
-  panelTextScroll?.classList.toggle("scroll-enabled", size.scrollEnabled);
-}
-
-function resizePanelWindowForContent(width, height) {
-  if (!diriAPI.resizePanelWindow) return;
-  const windowWidth = Math.max(PANEL_WINDOW_MIN_WIDTH, width + PANEL_WINDOW_MARGIN_X);
-  const windowHeight = Math.max(
-    PANEL_WINDOW_MIN_HEIGHT,
-    PANEL_TOP + height + PANEL_WINDOW_MARGIN_BOTTOM,
-  );
-  diriAPI.resizePanelWindow(windowWidth, windowHeight);
-}
 
 // ── IPC 监听 ──
 diriAPI.onAsrFinal((text) => {
@@ -179,8 +67,9 @@ diriAPI.onStateUpdate((payload) => {
     const state = data.state || "idle";
     
     if (state === "speaking" && data.isFinal) {
-      showPanelText(data.text || "");
-    } else if (state !== "speaking" && !data.keepPanelOpen) {
+      currentText = data.text || "";
+      triggerFinalSpeakingPanel();
+    } else if (state !== "speaking") {
       currentText = "";
       hideFinalSpeakingPanel();
     }
@@ -198,31 +87,12 @@ diriAPI.onHideWindow(() => {
 });
 
 let panelGeneration = 0;
-let lastPanelTriggerText = "";
-let lastPanelTriggerAt = 0;
-
-function showPanelText(text) {
-  const nextText = text || "";
-  const now = performance.now();
-  if (nextText === lastPanelTriggerText && now - lastPanelTriggerAt < 400) {
-    return;
-  }
-  lastPanelTriggerText = nextText;
-  lastPanelTriggerAt = now;
-  currentText = nextText;
-  triggerFinalSpeakingPanel();
-}
-
-diriAPI.onPanelStartSpeaking((text) => {
-  showPanelText(text);
-});
 
 // ── 边缘流光动画引擎 ──
 function triggerBorderFlow() {
   const currentGen = panelGeneration;
   const w = panelWidth;
   const h = panelHeight;
-  const r = clamp(panelRadius, 1, Math.min(w, h) / 2);
   const borderFlowSvg = document.getElementById("borderFlowSvg");
   if (!borderFlowSvg) return;
 
@@ -231,8 +101,8 @@ function triggerBorderFlow() {
   borderFlowSvg.setAttribute("height", h);
   borderFlowSvg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 
-  const dLeft = `M ${w / 2} 0 L ${r} 0 A ${r} ${r} 0 0 0 ${r} ${h} L ${w / 2} ${h}`;
-  const dRight = `M ${w / 2} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w - r} ${h} L ${w / 2} ${h}`;
+  const dLeft = `M ${w / 2} 0 L ${h / 2} 0 A ${h / 2} ${h / 2} 0 0 0 ${h / 2} ${h} L ${w / 2} ${h}`;
+  const dRight = `M ${w / 2} 0 L ${w - h / 2} 0 A ${h / 2} ${h / 2} 0 0 1 ${w - h / 2} ${h} L ${w / 2} ${h}`;
 
   borderFlowSvg.innerHTML = `
     <path id="leftWide" d="${dLeft}" fill="none" stroke="rgba(255, 255, 255, 0.95)" stroke-width="7" stroke-linecap="round" filter="url(#glowFilterWide)" />
@@ -336,13 +206,6 @@ function triggerPeriodicDrop() {
 // ── 液态水滴与玻璃面板动态展开 ──
 function triggerFinalSpeakingPanel() {
   clearLiquidTimeouts();
-  const targetSize = calculatePanelSize(currentText);
-  panelWidth = targetSize.width;
-  panelHeight = targetSize.height;
-  diriAPI.sendRendererLog(
-    `Panel auto-size: ${panelWidth}x${panelHeight}, chars=${currentText.length}, lines=${targetSize.measuredLineCount}, scroll=${targetSize.scrollEnabled}`,
-  );
-  resizePanelWindowForContent(panelWidth, panelHeight);
   
   // 初始化面板
   liquidPanel.style.display = "flex";
@@ -350,11 +213,8 @@ function triggerFinalSpeakingPanel() {
   liquidPanel.classList.remove("has-expanded");
   liquidPanel.style.width = "20px";
   liquidPanel.style.height = "10px";
-  liquidPanel.style.borderRadius = "9999px";
   panelContent.classList.remove("visible");
-  panelTextScroll?.classList.remove("scroll-enabled");
   panelText.innerText = "";
-  applyPanelLayout(targetSize);
   
   // 触发首次大水滴
   triggerFirstDrop();
@@ -370,7 +230,6 @@ function triggerFinalSpeakingPanel() {
     liquidPanel.classList.add("expanded");
     liquidPanel.style.width = `${panelWidth}px`;
     liquidPanel.style.height = `${panelHeight}px`;
-    liquidPanel.style.borderRadius = `${targetSize.radius}px`;
   }, 550);
   
   // T=6500ms 周期性循环滴水与流光
@@ -383,8 +242,6 @@ function triggerFinalSpeakingPanel() {
 
 function hideFinalSpeakingPanel() {
   panelGeneration++;
-  lastPanelTriggerText = "";
-  lastPanelTriggerAt = 0;
   clearLiquidTimeouts();
 
   const borderFlowSvg = document.getElementById("borderFlowSvg");
@@ -403,10 +260,8 @@ function hideFinalSpeakingPanel() {
   panelText.innerText = "";
   
   // 重置尺寸
-  panelWidth = BASE_PANEL_WIDTH;
-  panelHeight = BASE_PANEL_HEIGHT;
-  panelRadius = BASE_PANEL_HEIGHT / 2;
-  resizePanelWindowForContent(panelWidth, panelHeight);
+  panelWidth = 260;
+  panelHeight = 74;
 }
 
 function clearLiquidTimeouts() {
@@ -424,12 +279,12 @@ function clearLiquidTimeouts() {
 
 function startTypewriter(text) {
   panelText.innerText = "";
-  if (panelTextScroll) {
-    panelTextScroll.scrollTop = 0;
-  }
   // The model commonly separates paragraphs with a blank line. Keep the
   // paragraph break, but collapse the visual empty row to save panel space.
-  const displayText = normalizePanelText(text);
+  const displayText = text
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n[ \t]*\n+/g, "\n")
+    .replace(/\\n(?:[ \t]*\\n)+/g, "\\n");
   let i = 0;
   
   function nextChar() {
@@ -444,12 +299,7 @@ function startTypewriter(text) {
         panelText.appendChild(document.createTextNode(displayText.charAt(i)));
         i++;
       }
-      if (panelTextScroll && !panelTextScroll.classList.contains("scroll-enabled")) {
-        panelTextScroll.scrollTop = panelTextScroll.scrollHeight;
-      }
       typewriterTimeout = setTimeout(nextChar, 25);
-    } else if (panelTextScroll) {
-      panelTextScroll.scrollTop = 0;
     }
   }
   
@@ -517,15 +367,19 @@ function setupResizeHandler(elementId) {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
       
-      panelWidth = Math.round(clamp(startWidth + dx * 2, BASE_PANEL_WIDTH, PANEL_MAX_WIDTH));
-      panelHeight = Math.round(clamp(startHeight + dy, BASE_PANEL_HEIGHT, PANEL_MAX_HEIGHT));
-      panelRadius = computePanelRadius(panelWidth, panelHeight);
+      const scaleX = (startWidth + dx * 2) / 260;
+      const scaleY = (startHeight + dy) / 74;
+      const scale = Math.max(scaleX, scaleY);
+      
+      const clampedScale = Math.max(1.0, Math.min(2.5, scale));
+      
+      panelWidth = Math.round(260 * clampedScale);
+      panelHeight = Math.round(74 * clampedScale);
       
       liquidPanel.style.width = `${panelWidth}px`;
       liquidPanel.style.height = `${panelHeight}px`;
-      liquidPanel.style.borderRadius = `${panelRadius}px`;
-      liquidPanel.style.setProperty("--panel-radius", `${panelRadius}px`);
-      resizePanelWindowForContent(panelWidth, panelHeight);
+      
+      // Window B remains at fixed 720x360 size in main process, so no resizeFloatWindow call here!
     }
     
     function onMouseUp() {

@@ -1,13 +1,5 @@
 # Daisy — Agent Notes
 
-## Versioning
-
-For each delivered source modification or feature, increment the version once with decimal carry: 2.0.8 -> 2.0.9 -> 2.1.0, and 2.9.9 -> 3.0.0. The patch and minor components range from 0 to 9; do not produce 2.0.10 or 2.1.10. Keep package.json, package-lock.json and the built/installed application version identical. Do not increment for every edited file or test iteration within the same change. Never overwrite user configuration or publish release artifacts without a request.
-
-## Windows IME Receiver Safety
-
-Keep the WeChat receiver fully off-screen. Never send Escape or bare modifier taps to the foreground application when starting or cleaning up recognition: Escape can close QQ chat windows. Acquire receiver focus without keyboard injection, verify focus before sending an IME shortcut, and detach any attached input threads in finally. Run `node --test scripts/test-wechat-foreground.cjs` after native receiver changes; it records keys instead of activating the user's IME and checks repeated start/stop/cancel and focus failure.
-
 ## 项目概述
 
 `Daisy` 是一个 macOS 上的 AI 语音助手，支持快捷键 and 语音唤醒两种交互方式。
