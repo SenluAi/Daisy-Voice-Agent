@@ -26,16 +26,20 @@ export const IPC_CHANNELS = {
   START_RECORDING: "recording:start",
   STOP_RECORDING: "recording:stop",
   SEND_TEXT: "text:send",
+  FILES_DROPPED: "files:dropped",
   OPEN_SETTINGS: "settings:open",
   CLOSE_SETTINGS: "settings:close",
+  SETTINGS_NAVIGATE: "settings:navigate",
+  OPEN_HISTORY: "history:open",
+  CLOSE_HISTORY: "history:close",
   GET_CONFIG: "config:get",
   UPDATE_CONFIG: "config:update",
   QUIT_APP: "app:quit",
 
-  // Whisper model management
-  WHISPER_STATUS: "whisper:status",
-  WHISPER_DOWNLOAD: "whisper:download",
-  WHISPER_DOWNLOAD_PROGRESS: "whisper:download-progress",
+  // Sherpa-ONNX model management
+  SHERPA_STATUS: "sherpa:status",
+  SHERPA_DOWNLOAD: "sherpa:download",
+  SHERPA_DOWNLOAD_PROGRESS: "sherpa:download-progress",
 
   // Shortcut capture
   SHORTCUT_CAPTURE: "shortcut:capture",
@@ -49,6 +53,16 @@ export const IPC_CHANNELS = {
   // Conversation history
   HISTORY_GET: "history:get",
   HISTORY_CLEAR: "history:clear",
+  HISTORY_UPDATED: "history:updated",
+
+  // Task activity
+  TASK_ACTIVITY_GET: "task-activity:get",
+
+  EXTENSIONS_REQUEST: "extensions:request",
+
+  // Long-term memory
+  LONG_TERM_MEMORY_GET: "long-term-memory:get",
+  LONG_TERM_MEMORY_DELETE: "long-term-memory:delete",
 
   // App update
   APP_VERSION: "app:version",

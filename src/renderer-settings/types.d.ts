@@ -1,10 +1,15 @@
 // diriAPI 类型（跟 preload/index.ts 里的 DiriAPI 对齐）
+import type { ExtensionRequestAPI } from "../shared/extensions";
 export interface DiriAPI {
+  extensionsRequest: ExtensionRequestAPI;
   startRecording: () => void;
   stopRecording: () => void;
   sendText: (text: string) => void;
   openSettings: () => void;
   closeSettings: () => void;
+  onSettingsNavigate: (cb: (section: "llm" | "tasks") => void) => () => void;
+  openHistory: () => void;
+  closeHistory: () => void;
   getConfig: () => Promise<Record<string, string>>;
   updateConfig: (cfg: Record<string, string>) => Promise<boolean>;
   quitApp: () => void;
@@ -16,14 +21,21 @@ export interface DiriAPI {
   sendTtsPlayEnded: () => void;
   muteCurrentTts: () => void;
 
-  getWhisperStatus: (modelName?: string) => Promise<{
-    cliInstalled: boolean;
-    modelExists: boolean;
-    modelPath: string;
+  getSherpaStatus: () => Promise<{
+    installed: boolean;
+    modelReady: boolean;
+    modelDir: string;
     modelName: string;
+    encoderExists: boolean;
+    decoderExists: boolean;
+    tokensExists: boolean;
+    numThreads: number;
+    blockSize: number;
+    wechatInstalled: boolean;
+    url: string;
   }>;
-  downloadWhisperModel: (modelName: string) => void;
-  onWhisperDownloadProgress: (
+  downloadSherpaModel: () => void;
+  onSherpaDownloadProgress: (
     cb: (p: { percent: number; status: string }) => void
   ) => () => void;
 
@@ -40,6 +52,37 @@ export interface DiriAPI {
     Array<{ sender: "user" | "daisy"; text: string; timestamp: number }>
   >;
   clearChatHistory: () => Promise<void>;
+  onChatHistoryUpdated: (
+    cb: (history: Array<{ sender: "user" | "daisy"; text: string; timestamp: number }>) => void
+  ) => () => void;
+
+  getTaskActivity: () => Promise<{
+    updatedAt: number;
+    tasks: Array<{
+      request: string;
+      status: "pending" | "completed" | "blocked";
+      result?: string;
+      updatedAt: number;
+    }>;
+    files: string[];
+    applications: string[];
+    pages: string[];
+    preferences: string[];
+    logs: string[];
+  }>;
+  getLongTermMemory: () => Promise<{
+    retentionDays: 30;
+    entries: Array<{
+      id: string;
+      category: "profile" | "preference" | "task";
+      text: string;
+      status: "active";
+      createdAt: number;
+      updatedAt: number;
+    }>;
+    counts: Record<"profile" | "preference" | "task", number>;
+  }>;
+  deleteLongTermMemories: (ids: string[]) => Promise<number>;
 
   // App update
   getAppVersion: () => Promise<string>;

@@ -1,0 +1,32 @@
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #25323b; background: #f6f8fa;
+  --dsw-alias-bg-base: #f6f8fa; --dsw-alias-border-l1: #d7dfe5;
+  --dsw-alias-label-primary: #25323b; --dsw-alias-label-secondary: #657480;
+  --dsw-alias-brand-primary: #008caa;
+  --dsw-alias-bg-layer-1: #fff; --dsw-alias-bg-layer-2: #f6f8fa; --dsw-alias-bg-layer-3: #eef2f5;
+  --dsw-alias-bg-module-platform: #f6f8fa; --dsw-alias-bg-mask-1: #0005;
+  --dsw-alias-border-l2: #b9c6cf; --dsw-alias-button-primary-fill: #008caa;
+  --dsw-alias-label-tertiary: #778591; --dsw-alias-label-dimmed: #778591;
+  --dsw-alias-label-on-accent: #fff; --dsw-alias-label-primary-foreground: #fff;
+  --dsw-alias-state-business-primary: #008caa; --dsw-alias-state-success-primary: #248258;
+  --dsw-alias-state-error-primary: #b43246; --dsw-alias-state-warn-primary: #ad7400;
+  --dsw-alias-state-warning-primary: #ad7400;
+}
+* { box-sizing: border-box; letter-spacing: 0; }
+body { margin: 0; }
+html, body, #root, .daisy-plugin-shell { height: 100%; min-height: 0; }
+.daisy-plugin-shell { display: flex; flex-direction: column; }
+.daisy-plugin-shell > header { min-height: 52px; padding: 12px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #d7dfe5; background: #fff; }
+.daisy-plugin-shell > header strong { font-size: 15px; flex-shrink: 0; }
+.panel-notice { flex: 1; font-size: 12px; color: #248258; overflow-wrap: anywhere; }
+button { font: inherit; cursor: pointer; letter-spacing: 0; }
+.daisy-plugin-shell > header button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #d7dfe5; border-radius: 4px; color: #415361; background: #fff; flex-shrink: 0; }
+.daisy-plugin-shell > nav { display: flex; gap: 4px; padding: 8px 18px 0; border-bottom: 1px solid #d7dfe5; background: #fff; }
+.daisy-plugin-shell > nav button { border: 0; border-bottom: 2px solid transparent; padding: 9px 12px; background: transparent; color: #526572; font-size: 13px; }
+.daisy-plugin-shell > nav button[aria-selected="true"] { color: #007b92; border-bottom-color: #008caa; }
+.panel-content { flex: 1; min-height: 0; overflow: auto; }
+.panel-content > div { min-height: 100%; }
+.panel-error { padding: 18px; color: #b43246; overflow-wrap: anywhere; }
+.panel-empty { padding: 18px; color: #687884; font-size: 13px; }
+input, textarea { max-width: 100%; }
+button:focus-visible { outline: 2px solid #008caa; outline-offset: 2px; }

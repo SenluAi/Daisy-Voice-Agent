@@ -14,9 +14,11 @@ export class GlobalShortcut extends EventEmitter {
   private capturePressedKeys = new Set<string>();
   private captureKeysInOrder: string[] = [];
   private pressedTimer: NodeJS.Timeout | null = null;
+  private spaceHoldTimer: NodeJS.Timeout | null = null;
+  private readonly SPACE_HOLD_MS = 300;
   private windowsPoller: WinKeyStatePoller | null = null;
 
-  constructor(listenerForTest?: GlobalKeyboardListener) {
+  constructor(listenerForTest?: GlobalKeyboardListener, windowsPollerForTest?: WinKeyStatePoller) {
     super();
     this.targetKeys = this.parseShortcut(config.shortcut.globalShortcut);
 
@@ -32,14 +34,27 @@ export class GlobalShortcut extends EventEmitter {
     // push-to-talk because Windows key auto-repeat looks like a second press.
     // Poll physical state so DOWN starts recording and UP sends it.
     if (process.platform === "win32") {
-      const poller = new WinKeyStatePoller();
+      const poller = windowsPollerForTest || new WinKeyStatePoller();
       this.windowsPoller = poller;
       poller.on("pressed", () => {
-        if (this.isRecording) return;
+        if (this.isRecording || this.spaceHoldTimer) return;
+        const pressedAt = Date.now() - (poller.usesNativeSpaceHold ? this.SPACE_HOLD_MS : 0);
+        if (this.targetKeys.length === 1 && this.targetKeys[0] === "space" && !poller.usesNativeSpaceHold) {
+          this.spaceHoldTimer = setTimeout(() => {
+            this.spaceHoldTimer = null;
+            this.isRecording = true;
+            this.emit("pressed", pressedAt);
+          }, this.SPACE_HOLD_MS);
+          return;
+        }
         this.isRecording = true;
-        this.emit("pressed");
+        this.emit("pressed", pressedAt);
       });
       poller.on("released", () => {
+        if (this.spaceHoldTimer) {
+          clearTimeout(this.spaceHoldTimer);
+          this.spaceHoldTimer = null;
+        }
         if (!this.isRecording) return;
         this.isRecording = false;
         this.emit("released");
@@ -71,6 +86,10 @@ export class GlobalShortcut extends EventEmitter {
   }
 
   startCapture(mode: "single" | "combo" = "combo"): void {
+    if (this.spaceHoldTimer) {
+      clearTimeout(this.spaceHoldTimer);
+      this.spaceHoldTimer = null;
+    }
     this.captureMode = mode;
     this.pressedKeys.clear();
     this.capturePressedKeys.clear();
@@ -292,6 +311,10 @@ export class GlobalShortcut extends EventEmitter {
   }
 
   destroy(): void {
+    if (this.spaceHoldTimer) {
+      clearTimeout(this.spaceHoldTimer);
+      this.spaceHoldTimer = null;
+    }
     if (process.platform === "win32") {
       this.windowsPoller?.kill();
       this.windowsPoller = null;
@@ -301,6 +324,10 @@ export class GlobalShortcut extends EventEmitter {
   }
 
   updateShortcut(shortcut: string): void {
+    if (this.spaceHoldTimer) {
+      clearTimeout(this.spaceHoldTimer);
+      this.spaceHoldTimer = null;
+    }
     if (this.pressedTimer) {
       clearTimeout(this.pressedTimer);
       this.pressedTimer = null;

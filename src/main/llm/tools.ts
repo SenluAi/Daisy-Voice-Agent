@@ -26,6 +26,45 @@ export const availableTools: ToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "extension_list_tools",
+      description: "列出 Daisy 已启用插件和 MCP 服务器提供的真实工具及 JSON 参数定义；调用扩展前先使用此工具，不要猜测工具 ID。",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "extension_call_tool",
+      description: "调用已启用插件或 MCP 工具。id 和参数必须来自 extension_list_tools 的实际结果；仍遵守用户授权和危险操作确认要求。",
+      parameters: { type: "object", properties: {
+        id: { type: "string", description: "真实扩展工具 ID" },
+        args_json: { type: "string", description: "符合该工具 inputSchema 的 JSON 对象字符串" },
+      }, required: ["id", "args_json"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_skill",
+      description: "读取已安装且启用的 Skill 技能正文。id 来自当前已启用技能列表，仅按任务需要读取。",
+      parameters: { type: "object", properties: { id: { type: "string", description: "技能真实 ID" } }, required: ["id"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "screen_snapshot",
+      description: "截取当前主屏幕并识别当前前台应用，返回真实截图路径与画面尺寸。",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "diagnose_application",
       description: "只读诊断指定应用为何无法打开：检查已安装启动项、文件是否存在、是否仍有进程运行，以及 Windows 最近 7 天的相关崩溃或挂起记录。绝不会启动、关闭或修改该应用。",
       parameters: {
@@ -95,7 +134,7 @@ export const availableTools: ToolDefinition[] = [
     type: "function",
     function: {
       name: "open_application",
-      description: "打开指定的应用程序",
+      description: "打开指定的应用程序；若应用已有运行窗口，则只恢复并切换到该窗口，不会重复启动新实例",
       parameters: {
         type: "object",
         properties: {
@@ -458,8 +497,189 @@ export const availableTools: ToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "open_contact_chat",
+      description: "快速切换或打开 QQ/微信，尝试搜索联系人。动作后会自动截图；若显示已保存账号的一键登录页，先点击可见的登录按钮，验证进入主界面后再搜索。只有看到真实搜索结果，才点击名称完全匹配的联系人并核对会话标题。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "通信应用名称，只能是 QQ、微信、WeChat 或 Weixin" },
+          contact: { type: "string", description: "用户明确指定的联系人或群名称" },
+        },
+        required: ["name", "contact"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "stage_file_attachment",
+      description: "把真实存在的文件复制并粘贴到当前已核对的 QQ/微信会话。此操作只生成附件发送预览，不会确认发送；动作后必须根据自动截图核对文件名。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "通信应用名称，只能是 QQ、微信、WeChat 或 Weixin" },
+          path: { type: "string", description: "来自 list_directory 等工具结果的真实文件绝对路径" },
+        },
+        required: ["name", "path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "focus_application_search",
+      description: "聚焦已打开的 QQ 或微信主窗口搜索框，不新开应用实例。用于搜索联系人前。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "通信应用名称，只能是 QQ、微信、WeChat 或 Weixin" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "select_application_search_result",
+      description: "在 QQ 或微信已显示联系人搜索结果时选择首个结果；调用后必须截图核对聊天标题是否为目标联系人。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "通信应用名称，只能是 QQ、微信、WeChat 或 Weixin" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "confirm_staged_attachment",
+      description: "确认发送 QQ 或微信聊天窗口中已经通过 Ctrl+V 粘贴、并经截图核对无误的文件附件。仅复制文件到剪贴板时不得调用。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "通信应用名称，只能是 QQ、微信、WeChat 或 Weixin" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_click",
+      description: "点击当前实时截图中可见的按钮或控件。坐标来自最近附带的截图；工具自动返回动作后截图，不需重复截图。",
+      parameters: {
+        type: "object",
+        properties: {
+          x: { type: "number", description: "目标在最近截图中的横坐标" },
+          y: { type: "number", description: "目标在最近截图中的纵坐标" },
+          screenshot_width: { type: "number", description: "screen_snapshot 返回的截图宽度" },
+          screenshot_height: { type: "number", description: "screen_snapshot 返回的截图高度" },
+          target: { type: "string", description: "截图中真实可见的目标名称，例如“发送按钮”" },
+        },
+        required: ["x", "y", "screenshot_width", "screenshot_height", "target"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_double_click",
+      description: "双击当前截图中可见的文件或控件，自动返回动作后截图。不能猜测坐标。",
+      parameters: {
+        type: "object",
+        properties: {
+          x: { type: "number", description: "截图横坐标" },
+          y: { type: "number", description: "截图纵坐标" },
+          screenshot_width: { type: "number", description: "当前截图宽度" },
+          screenshot_height: { type: "number", description: "当前截图高度" },
+          target: { type: "string", description: "截图中可见的目标名称" },
+        },
+        required: ["x", "y", "screenshot_width", "screenshot_height", "target"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_right_click",
+      description: "右击当前截图中的目标以打开上下文菜单，自动返回动作后截图。",
+      parameters: {
+        type: "object",
+        properties: {
+          x: { type: "number", description: "截图横坐标" },
+          y: { type: "number", description: "截图纵坐标" },
+          screenshot_width: { type: "number", description: "当前截图宽度" },
+          screenshot_height: { type: "number", description: "当前截图高度" },
+          target: { type: "string", description: "截图中可见的目标名称" },
+        },
+        required: ["x", "y", "screenshot_width", "screenshot_height", "target"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_scroll",
+      description: "在当前截图的指定滚动区域滚动一次，自动返回动作后截图；可用于网页、列表、设置页面。",
+      parameters: {
+        type: "object",
+        properties: {
+          x: { type: "number", description: "滚动区域内的截图横坐标" },
+          y: { type: "number", description: "滚动区域内的截图纵坐标" },
+          screenshot_width: { type: "number", description: "当前截图宽度" },
+          screenshot_height: { type: "number", description: "当前截图高度" },
+          direction: { type: "string", enum: ["up", "down", "left", "right"], description: "滚动方向" },
+        },
+        required: ["x", "y", "screenshot_width", "screenshot_height", "direction"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_drag",
+      description: "从当前截图中可见的起点拖动到终点，自动返回动作后截图。起终点必须都在当前截图内。",
+      parameters: {
+        type: "object",
+        properties: {
+          x: { type: "number", description: "起点横坐标" },
+          y: { type: "number", description: "起点纵坐标" },
+          end_x: { type: "number", description: "终点横坐标" },
+          end_y: { type: "number", description: "终点纵坐标" },
+          screenshot_width: { type: "number", description: "当前截图宽度" },
+          screenshot_height: { type: "number", description: "当前截图高度" },
+          target: { type: "string", description: "可见拖动对象与目的地" },
+        },
+        required: ["x", "y", "end_x", "end_y", "screenshot_width", "screenshot_height", "target"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "copy_file_to_clipboard",
+      description: "把一个已确认存在的文件作为文件附件复制到系统剪贴板，完整支持中文及其他 Unicode 文件名。此操作只完成附件暂存，不代表已经发送；随后必须在目标聊天窗口按 Ctrl+V、确认发送并截图校验。不会读取、修改或重命名文件。",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "来自 list_directory 等工具结果的真实文件绝对路径",
+          },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "run_shell_command",
-      description: "执行终端命令（shell command），可以安装软件、管理文件、运行脚本等。用于以上工具无法覆盖的场景",
+      description: "在 Daisy 后台执行命令或脚本，不打开控制台。用户已委托的脚本运行和调试直接执行，无需逐次请求放行；可在任务总计 200 轮内持续调试，禁止无进展地重复同一命令。普通脚本优先用此工具，不使用插件的交互控制台；Windows PowerShell 脚本设置 shell=powershell，无需额外命令包装。用于以上工具无法覆盖的场景。",
       parameters: {
         type: "object",
         properties: {
@@ -467,6 +687,7 @@ export const availableTools: ToolDefinition[] = [
             type: "string",
             description: "要执行的终端命令",
           },
+          shell: { type: "string", enum: ["cmd", "powershell"], description: "Windows 默认 cmd；PowerShell 脚本选 powershell。macOS 忽略此参数。" },
         },
         required: ["command"],
       },

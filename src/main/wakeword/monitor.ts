@@ -1,227 +1,174 @@
 import { EventEmitter } from "node:events";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
+import type { OnlineRecognizer, OnlineStream } from "sherpa-onnx-node";
+import {
+  createSherpaStream,
+  getSherpaBlockBytes,
+  getSherpaBlockSize,
+  getSherpaNumThreads,
+  pcm16ToFloat32,
+  SHERPA_SAMPLE_RATE,
+} from "../asr/sherpaRuntime";
+import { config } from "../config/env";
+import { isStopTaskCommand } from "../asr/voiceFilter";
 import { log } from "../utils/logger";
-import { getWhisperModelPath, getBundledBin, getWhisperExecEnv } from "../config/env";
-
-const execFileAsync = promisify(execFile);
-
-const WHISPER_CLI = getBundledBin("whisper-cli");
-const TEMP_DIR = path.join(os.tmpdir(), "diri-wakeword");
+import { extractWakeCommand, findWakeWord } from "./patterns";
 
 const SAMPLE_RATE = 16000;
-const MIN_AUDIO_BYTES = SAMPLE_RATE * 2 * 0.5; // 0.5s minimum
-const MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * 8;   // 8s maximum
-const SILENCE_THRESHOLD = 0.008;
-const SILENCE_END_MS = 2000;
-const SPEECH_START_MS = 0; // Trigger on first loud frame
-
-const WAKE_WORD_PATTERNS: RegExp[] = [
-  // 1. Chinese prefix + Chinese Daisy (e.g. 嘿黛西, 嘿代茜)
-  /[嘿嗨黑喂][,\s]*[呆戴代带袋大达][西茜希溪喜细]/,
-  
-  // 2. English prefix + English Daisy (e.g. hey daisy, hi daisy, hello daisy)
-  /\b(hey|hi|hello|okay|ok)[,\s]*(daisy|daysi|dayzi|deisy|deizy)\b/i,
-  
-  // 3. English prefix + Chinese Daisy (e.g. hey 黛西)
-  /\b(hey|hi|hello|okay|ok)[,\s]*[呆戴代带袋大达][西茜希溪喜细]/i,
-  
-  // 4. Chinese prefix + English Daisy (e.g. 嘿 daisy)
-  /[嘿嗨黑喂][,\s]*(daisy|daysi|dayzi|deisy|deizy)/i,
-];
-type MonitorState = "idle" | "recording" | "paused";
 
 export class WakeWordMonitor extends EventEmitter {
-  private state: MonitorState = "idle";
-  private audioBuffer: Buffer[] = [];
-  private preRollBuffer: Buffer[] = [];
-  private totalBytes = 0;
-  private vad: VAD;
-  private processing = false;
+  private recognizer: OnlineRecognizer | null = null;
+  private stream: OnlineStream | null = null;
+  private pendingPcm: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  private paused = true;
+  private interruptOnly = false;
+  private lastText = "";
+  private lastWakeAt = 0;
+  private blockBytes = getSherpaBlockBytes();
+  private blockSize = getSherpaBlockSize();
+  private numThreads = getSherpaNumThreads();
 
   constructor(_keyword: string) {
     super();
-    this.vad = new VAD(800);
   }
 
   start(): void {
-    this.state = "idle";
-    if (!fs.existsSync(TEMP_DIR)) {
-      fs.mkdirSync(TEMP_DIR, { recursive: true });
-    }
-    log("WakeWordMonitor: started, using whisper.cpp local detection");
+    this.paused = false;
+    this.lastText = "";
+    this.pendingPcm = Buffer.alloc(0);
+    this.blockBytes = getSherpaBlockBytes();
+    this.blockSize = getSherpaBlockSize();
+    this.numThreads = getSherpaNumThreads();
+    this.ensureStream();
+    log(
+      `WakeWordMonitor: started with Sherpa-ONNX streaming Paraformer INT8, numThreads=${this.numThreads}, blockSize=${this.blockSize}`,
+    );
   }
 
   stop(): void {
     this.pause();
-    this.state = "paused";
   }
 
   pause(): void {
-    this.state = "paused";
-    this.audioBuffer = [];
-    this.totalBytes = 0;
-    this.vad.reset();
+    this.paused = true;
+    this.pendingPcm = Buffer.alloc(0);
+    this.lastText = "";
+    this.resetStream();
   }
 
   resume(): void {
-    if (this.state === "paused") {
-      this.state = "idle";
-      this.audioBuffer = [];
-      this.totalBytes = 0;
-      this.vad.reset();
-      log("WakeWordMonitor: resumed");
-    }
+    if (!this.paused) return;
+    this.paused = false;
+    this.pendingPcm = Buffer.alloc(0);
+    this.lastText = "";
+    this.blockBytes = getSherpaBlockBytes();
+    this.blockSize = getSherpaBlockSize();
+    this.numThreads = getSherpaNumThreads();
+    this.ensureStream();
+    log("WakeWordMonitor: resumed");
+  }
+
+  setInterruptOnly(enabled: boolean): void {
+    if (this.interruptOnly === enabled) return;
+    this.interruptOnly = enabled;
+    this.resetStream();
   }
 
   feedPcm(buffer: Buffer): void {
-    if (this.state === "paused") return;
-
-    const vadEvent = this.vad.feed(buffer);
-
-    if (this.state === "idle") {
-      // Maintain a sliding window pre-roll buffer of 500ms (16000 bytes)
-      this.preRollBuffer.push(buffer);
-      let preRollBytes = this.preRollBuffer.reduce((sum, b) => sum + b.length, 0);
-      while (preRollBytes > 16000 && this.preRollBuffer.length > 1) {
-        preRollBytes -= this.preRollBuffer.shift()!.length;
-      }
-
-      if (vadEvent.speechStart) {
-        this.state = "recording";
-        this.audioBuffer = [...this.preRollBuffer];
-        this.totalBytes = preRollBytes;
-        this.preRollBuffer = [];
-      }
-    } else if (this.state === "recording") {
-      this.audioBuffer.push(buffer);
-      this.totalBytes += buffer.length;
-
-      // Stop recording on silence or max length
-      if (vadEvent.silenceEnd || this.totalBytes >= MAX_AUDIO_BYTES) {
-        this.state = "idle";
-        this.vad.reset();
-        this.preRollBuffer = [];
-        if (this.totalBytes >= MIN_AUDIO_BYTES) {
-          this.processAudio();
-        } else {
-          this.audioBuffer = [];
-          this.totalBytes = 0;
-        }
-      }
-    }
-  }
-
-  private async processAudio(): Promise<void> {
-    if (this.processing) {
-      this.audioBuffer = [];
-      this.totalBytes = 0;
-      return;
-    }
-
-    this.processing = true;
-    const audioData = Buffer.concat(this.audioBuffer);
-    this.audioBuffer = [];
-    this.totalBytes = 0;
+    if (this.paused || buffer.length === 0) return;
+    if (!this.ensureStream()) return;
 
     try {
-      const text = await this.transcribeWithWhisper(audioData);
-      if (text) {
-        log(`WakeWordMonitor: whisper.cpp result="${text}"`);
-        if (this.containsWakeWord(text)) {
-          const command = this.extractCommand(text);
-          log(`WakeWordMonitor: wake word detected! command="${command}"`);
-          this.emit("wake", command);
-        }
+      this.pendingPcm = this.pendingPcm.length > 0 ? Buffer.concat([this.pendingPcm, buffer]) : buffer;
+      while (this.pendingPcm.length >= this.blockBytes) {
+        const chunk = this.pendingPcm.subarray(0, this.blockBytes);
+        this.pendingPcm = this.pendingPcm.subarray(this.blockBytes);
+        this.stream?.acceptWaveform({
+          sampleRate: SHERPA_SAMPLE_RATE,
+          samples: pcm16ToFloat32(chunk),
+        });
+        this.decodeReady();
+        this.checkWakeCandidate();
+      }
+
+      if (this.stream && this.recognizer?.isEndpoint(this.stream)) {
+        this.checkWakeCandidate(true);
+        this.resetStream();
       }
     } catch (error) {
-      log(`WakeWordMonitor: whisper error: ${error instanceof Error ? error.message : String(error)}`);
+      log(`WakeWordMonitor: Sherpa streaming error: ${error instanceof Error ? error.message : String(error)}`);
+      this.pause();
     }
-
-    this.processing = false;
   }
 
-  private async transcribeWithWhisper(audioData: Buffer): Promise<string> {
-    const wavPath = path.join(TEMP_DIR, `wake-${Date.now()}.wav`);
-
-    // Write WAV file with header
-    const wav = this.toWav(audioData);
-    fs.writeFileSync(wavPath, wav);
-
+  private ensureStream(): boolean {
+    if (this.recognizer && this.stream) return true;
     try {
-      const { stdout } = await execFileAsync(WHISPER_CLI, [
-        "-m", getWhisperModelPath(),
-        "-f", wavPath,
-        "-l", "en",
-        "--no-timestamps",
-        "-t", "4",
-        "-np",
-        "--prompt", "Hey Daisy",
-        "-sns",
-      ], {
-        timeout: 10000,
-        maxBuffer: 1024 * 1024,
-        env: getWhisperExecEnv(WHISPER_CLI),
-      });
-
-      // whisper-cli outputs transcript to stdout, clean it up
-      const text = stdout.trim().replace(/\[.*?\]/g, "").trim();
-      return text;
-    } finally {
-      fs.promises.unlink(wavPath).catch(() => {});
+      const created = createSherpaStream();
+      this.recognizer = created.recognizer;
+      this.stream = created.stream;
+      return true;
+    } catch (error) {
+      log(`WakeWordMonitor: Sherpa stream unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }
 
-  private toWav(pcm: Buffer): Buffer {
-    const header = Buffer.alloc(44);
-    const dataLength = pcm.length;
-    header.write("RIFF", 0, "ascii");
-    header.writeUInt32LE(dataLength + 36, 4);
-    header.write("WAVE", 8, "ascii");
-    header.write("fmt ", 12, "ascii");
-    header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20);          // PCM
-    header.writeUInt16LE(1, 22);          // mono
-    header.writeUInt32LE(SAMPLE_RATE, 24);
-    header.writeUInt32LE(SAMPLE_RATE * 2, 28); // byte rate
-    header.writeUInt16LE(2, 32);          // block align
-    header.writeUInt16LE(16, 34);         // bits per sample
-    header.write("data", 36, "ascii");
-    header.writeUInt32LE(dataLength, 40);
-    return Buffer.concat([header, pcm]);
+  private decodeReady(): void {
+    if (!this.recognizer || !this.stream) return;
+    while (this.recognizer.isReady(this.stream)) {
+      this.recognizer.decode(this.stream);
+    }
   }
 
-  private containsWakeWord(text: string): boolean {
-    const normalized = text.replace(/[\s,，。！!？?、~""''']/g, "");
-    for (const pattern of WAKE_WORD_PATTERNS) {
-      if (pattern.test(normalized) || pattern.test(text)) {
-        log(`WakeWordMonitor: matched pattern ${pattern.source}`);
-        return true;
+  private checkWakeCandidate(fromEndpoint = false): void {
+    const text = this.currentText();
+    if (this.interruptOnly) {
+      if (fromEndpoint && isStopTaskCommand(text)) {
+        log(`WakeWordMonitor: stop task command="${text}"`);
+        this.emit("stop_task");
+        this.resetStream();
+      }
+      return;
+    }
+    if (!text || text === this.lastText) return;
+    this.lastText = text;
+    log(`WakeWordMonitor: sherpa result="${text}"`);
+
+    const match = findWakeWord(text);
+    if (!match) return;
+    if (Date.now() - this.lastWakeAt < 1500) return;
+
+    this.lastWakeAt = Date.now();
+    const command = extractWakeCommand(text);
+    log(`WakeWordMonitor: matched pattern ${match.pattern}`);
+    log(`WakeWordMonitor: wake word detected! kind=${match.kind}, endpoint=${fromEndpoint}, command="${command}"`);
+    this.emit("wake", command);
+    this.resetStream();
+  }
+
+  private currentText(): string {
+    if (!this.recognizer || !this.stream) return "";
+    const result = this.recognizer.getResult(this.stream);
+    return (result.text || "").replace(/\s+/g, " ").trim();
+  }
+
+  private resetStream(): void {
+    if (this.recognizer && this.stream) {
+      try {
+        this.recognizer.reset(this.stream);
+      } catch (error) {
+        log(`WakeWordMonitor: Sherpa reset failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    return false;
+    this.stream = null;
+    this.pendingPcm = Buffer.alloc(0);
+    this.lastText = "";
   }
 
-  private extractCommand(text: string): boolean | string {
-    for (const pattern of WAKE_WORD_PATTERNS) {
-      const match = text.match(pattern);
-      if (match) {
-        const idx = text.indexOf(match[0]);
-        if (idx >= 0) {
-          const remaining = text.slice(idx + match[0].length);
-          return remaining.replace(/^[,，。！!？?、\s]+/, "").trim();
-        }
-      }
-    }
-    return "";
-  }
 }
 
 export class VAD {
-  private noiseFloor = 0.005; // adaptive noise baseline
+  private noiseFloor = 0.005;
   private speechStartMs = 0;
   private silenceEndMs = 2000;
   private inSpeech = false;
@@ -229,21 +176,23 @@ export class VAD {
   private silenceCounter = 0;
   private frameCount = 0;
 
-  constructor(silenceEndMs = 2000) {
+  constructor(silenceEndMs = 2000, speechStartMs = 0) {
     this.silenceEndMs = silenceEndMs;
+    this.speechStartMs = speechStartMs;
   }
 
   feed(buffer: Buffer): { speechStart: boolean; silenceEnd: boolean } {
     const energy = this.calculateEnergy(buffer);
     const chunkMs = ((buffer.length / 2) / SAMPLE_RATE) * 1000;
 
-    // Adaptive noise floor: only update when NOT in speech
     if (!this.inSpeech) {
-      // Slowly adapt to background noise
       this.noiseFloor = this.noiseFloor * 0.97 + energy * 0.03;
     }
-    // Threshold is 2x above noise floor, minimum 0.02
-    const threshold = Math.max(this.noiseFloor * 2, 0.02);
+    const sensitivity = Math.min(100, Math.max(1, config.asr.microphoneSensitivity));
+    const threshold = Math.max(
+      this.noiseFloor * (1.8 + (100 - sensitivity) * 0.012),
+      0.012 + (100 - sensitivity) * 0.00018,
+    );
     const isLoud = energy > threshold;
 
     this.frameCount++;
@@ -255,7 +204,8 @@ export class VAD {
       if (isLoud) {
         this.speechCounter += chunkMs;
         this.silenceCounter = 0;
-        if (this.speechCounter >= this.speechStartMs) {
+        const requiredSpeechMs = Math.max(this.speechStartMs, 150 + (100 - sensitivity) * 4);
+        if (this.speechCounter >= requiredSpeechMs) {
           this.inSpeech = true;
           return { speechStart: true, silenceEnd: false };
         }
@@ -263,20 +213,20 @@ export class VAD {
         this.speechCounter = 0;
       }
       return { speechStart: false, silenceEnd: false };
-    } else {
-      if (isLoud) {
-        this.silenceCounter = 0;
-      } else {
-        this.silenceCounter += chunkMs;
-        if (this.silenceCounter >= this.silenceEndMs) {
-          this.inSpeech = false;
-          this.speechCounter = 0;
-          this.silenceCounter = 0;
-          return { speechStart: false, silenceEnd: true };
-        }
-      }
-      return { speechStart: false, silenceEnd: false };
     }
+
+    if (isLoud) {
+      this.silenceCounter = 0;
+    } else {
+      this.silenceCounter += chunkMs;
+      if (this.silenceCounter >= this.silenceEndMs) {
+        this.inSpeech = false;
+        this.speechCounter = 0;
+        this.silenceCounter = 0;
+        return { speechStart: false, silenceEnd: true };
+      }
+    }
+    return { speechStart: false, silenceEnd: false };
   }
 
   reset(): void {

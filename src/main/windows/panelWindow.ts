@@ -9,6 +9,8 @@ import {
 
 let panelWindow: BrowserWindow | null = null;
 let panelRecycleTimer: NodeJS.Timeout | null = null;
+let panelReady = false;
+let pendingPanelText: string | null = null;
 
 function cancelPanelRecycle(): void {
   if (panelRecycleTimer) {
@@ -19,6 +21,8 @@ function cancelPanelRecycle(): void {
 
 export function destroyPanelWindow(): void {
   cancelPanelRecycle();
+  pendingPanelText = null;
+  panelReady = false;
   if (panelWindow && !panelWindow.isDestroyed()) {
     log("[panelWindow] Recycling panelWindow after 30s idle");
     panelWindow.removeAllListeners();
@@ -27,6 +31,28 @@ export function destroyPanelWindow(): void {
   }
   panelWindow = null;
   setMacOSOverlayVisible("panel", false);
+}
+
+function sendPanelStartSpeaking(text: string): void {
+  if (!panelWindow || panelWindow.isDestroyed() || panelWindow.webContents.isDestroyed()) {
+    pendingPanelText = text;
+    return;
+  }
+
+  if (!panelReady || panelWindow.webContents.isLoading()) {
+    pendingPanelText = text;
+    log("[panelWindow] Panel not ready; queued latest speaking text");
+    return;
+  }
+
+  pendingPanelText = null;
+  panelWindow.webContents.send("panel:start-speaking", text);
+}
+
+function flushPendingPanelText(): void {
+  const text = pendingPanelText;
+  if (text === null) return;
+  sendPanelStartSpeaking(text);
 }
 
 function schedulePanelRecycle(): void {
@@ -87,12 +113,18 @@ export function createPanelWindow(): BrowserWindow {
   });
 
   panelWindow.loadFile(path.join(__dirname, "../../renderer/panel.html"));
+  panelReady = false;
+  panelWindow.webContents.once("did-finish-load", () => {
+    panelReady = true;
+    flushPendingPanelText();
+  });
   panelWindow.setAlwaysOnTop(true, "screen-saver", 1);
   configureMacOSOverlay(panelWindow);
   panelWindow.setIgnoreMouseEvents(true, { forward: true });
 
   panelWindow.on("closed", () => {
     panelWindow = null;
+    panelReady = false;
   });
 
   return panelWindow;
@@ -131,12 +163,13 @@ export function showPanelWindow(text: string): void {
     panelWindow.showInactive();
     raiseMacOSOverlay(panelWindow);
     panelWindow.moveTop();
-    panelWindow.webContents.send("panel:start-speaking", text);
+    sendPanelStartSpeaking(text);
     log("Panel window shown");
   }
 }
 
 export function hidePanelWindow(): void {
+  pendingPanelText = null;
   if (panelWindow && !panelWindow.isDestroyed()) {
     panelWindow.webContents.send("panel:hide");
     panelWindow.hide();

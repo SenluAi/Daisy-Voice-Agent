@@ -2,8 +2,7 @@ import { BrowserWindow } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EdgeTTS } from "node-edge-tts";
-import { config } from "../config/env";
+import { synthesizeEdgeTtsFile } from "../tts/edgeTTS";
 import { log, logError } from "./logger";
 
 /**
@@ -17,22 +16,41 @@ import { log, logError } from "./logger";
 const ANNOUNCE_DIR = path.join(os.tmpdir(), "diri-announce");
 
 let announceLock: Promise<void> = Promise.resolve();
+let announceGeneration = 0;
+let activeAnnouncementWindow: BrowserWindow | null = null;
 
 export function announceToUser(text: string): Promise<void> {
-  const run = announceLock.then(() => playAnnouncement(text));
+  const generation = announceGeneration;
+  const run = announceLock.then(() => {
+    if (generation !== announceGeneration) return;
+    return playAnnouncement(text, generation);
+  });
   announceLock = run.catch(() => {});
   return run;
 }
 
-async function playAnnouncement(text: string): Promise<void> {
+export function cancelAnnouncements(): void {
+  announceGeneration += 1;
+  announceLock = Promise.resolve();
+  const win = activeAnnouncementWindow;
+  activeAnnouncementWindow = null;
+  try {
+    if (win && !win.isDestroyed()) win.destroy();
+  } catch {
+    // The player may already be closing.
+  }
+}
+
+async function playAnnouncement(text: string, generation: number): Promise<void> {
   if (!text || !text.trim()) return;
   let filePath = "";
   let htmlPath = "";
   try {
+    if (generation !== announceGeneration) return;
     if (!fs.existsSync(ANNOUNCE_DIR)) fs.mkdirSync(ANNOUNCE_DIR, { recursive: true });
     filePath = path.join(ANNOUNCE_DIR, `announce-${Date.now()}.mp3`);
-    const tts = new EdgeTTS({ voice: config.tts.voice, rate: config.tts.rate });
-    await tts.ttsPromise(text, filePath);
+    await synthesizeEdgeTtsFile(text, filePath);
+    if (generation !== announceGeneration) return;
     if (!fs.existsSync(filePath)) throw new Error("announcement synthesis produced no file");
 
     htmlPath = path.join(ANNOUNCE_DIR, `play-${Date.now()}.html`);
@@ -41,7 +59,7 @@ async function playAnnouncement(text: string): Promise<void> {
       `onended="window.close()" onerror="window.close()" oncanplay="this.play()"></audio></body></html>`;
     fs.writeFileSync(htmlPath, html, "utf-8");
 
-    await playInHiddenWindow(htmlPath);
+    await playInHiddenWindow(htmlPath, generation);
   } catch (err) {
     logError("[announce] failed", err);
   } finally {
@@ -50,7 +68,7 @@ async function playAnnouncement(text: string): Promise<void> {
   }
 }
 
-function playInHiddenWindow(htmlPath: string): Promise<void> {
+function playInHiddenWindow(htmlPath: string, generation: number): Promise<void> {
   return new Promise((resolve) => {
     let win: BrowserWindow | null = null;
     let done = false;
@@ -58,9 +76,14 @@ function playInHiddenWindow(htmlPath: string): Promise<void> {
       if (done) return;
       done = true;
       try { if (win && !win.isDestroyed()) win.destroy(); } catch { /* ignore */ }
+      if (activeAnnouncementWindow === win) activeAnnouncementWindow = null;
       resolve();
     };
     try {
+      if (generation !== announceGeneration) {
+        finish();
+        return;
+      }
       win = new BrowserWindow({
         width: 1, height: 1, show: false, frame: false, skipTaskbar: true,
         resizable: false, focusable: false,
@@ -71,6 +94,7 @@ function playInHiddenWindow(htmlPath: string): Promise<void> {
           autoplayPolicy: "no-user-gesture-required",
         },
       });
+      activeAnnouncementWindow = win;
       win.on("closed", finish);
       win.loadFile(htmlPath).catch(() => finish());
       // Hard cap so a stuck player can never block the tool forever.

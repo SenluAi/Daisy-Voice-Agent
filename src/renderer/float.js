@@ -89,6 +89,7 @@ const targetConfigs = {
 
 // ── 运行状态 ──
 let currentState = 'idle';
+let mutedAnswerAwaitingNextClick = false;
 let speedMultiplier = 0.1; // 固定 0.1x
 let visible = false;
 let isLoopRunning = false;
@@ -186,8 +187,9 @@ diriAPI.onStateUpdate((payload) => {
   try {
     const data = JSON.parse(payload);
     let state = data.state || "idle";
-    if (state === "processing") state = "thinking";
+    if (state === "processing" || state === "working") state = "thinking";
     currentState = state;
+    mutedAnswerAwaitingNextClick = data.mutedAnswer === true;
   } catch (err) {
     logToMain("onStateUpdate error: " + err.message);
   }
@@ -569,16 +571,6 @@ function drawGlassHighlights(cx, cy, radius, activeState, isDark) {
   ctx.stroke();
 }
 
-// ── 鼠标穿透智能判断 ──
-let isMouseOverInteractiveElement = false;
-window.addEventListener("mousemove", (e) => {
-  const isOverOrb = isPointInOrb(e.clientX, e.clientY);
-  if (isOverOrb !== isMouseOverInteractiveElement) {
-    isMouseOverInteractiveElement = isOverOrb;
-    diriAPI.setIgnoreMouse(!isMouseOverInteractiveElement);
-  }
-});
-
 function isPointInOrb(x, y) {
   if (!visible || !canvas) return false;
 
@@ -591,10 +583,59 @@ function isPointInOrb(x, y) {
   return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
 }
 
-// A click while Daisy is delivering a final answer only mutes that answer's
-// speech. The main process intentionally keeps the answer state and panel open.
+function setDropActive(active) {
+  document.body.classList.toggle("drop-active", active);
+}
+
+function extractDroppedPaths(event) {
+  const files = Array.from(event.dataTransfer?.files || []);
+  const paths = [];
+  for (const file of files) {
+    try {
+      const filePath = diriAPI.getPathForFile(file);
+      if (filePath) paths.push(filePath);
+    } catch (err) {
+      logToMain("drop getPathForFile error: " + err.message);
+    }
+  }
+  return paths;
+}
+
+window.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  diriAPI.setIgnoreMouse(false);
+  setDropActive(isPointInOrb(e.clientX, e.clientY));
+});
+
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  setDropActive(isPointInOrb(e.clientX, e.clientY));
+});
+
+window.addEventListener("dragleave", (e) => {
+  if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+    setDropActive(false);
+  }
+});
+
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const shouldHandle = isPointInOrb(e.clientX, e.clientY);
+  setDropActive(false);
+  if (!shouldHandle) return;
+
+  const paths = extractDroppedPaths(e);
+  if (paths.length === 0) {
+    logToMain("drop ignored: no local file paths");
+    return;
+  }
+  logToMain("drop files: " + paths.join(" | "));
+  diriAPI.sendDroppedFiles(paths);
+});
+
 canvas.addEventListener("click", () => {
-  if (currentState === "speaking") {
+  if (currentState === "speaking" || mutedAnswerAwaitingNextClick) {
     diriAPI.muteCurrentTts();
   }
 });

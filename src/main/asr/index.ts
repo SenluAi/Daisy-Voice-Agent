@@ -85,6 +85,7 @@ export class AsrSession extends EventEmitter {
   } = {}) {
     super();
     this.credentials = {
+      apiKey: config.asr.apiKey,
       appId: config.asr.appId,
       accessToken: config.asr.accessToken,
       resourceId: config.asr.resourceId,
@@ -294,8 +295,12 @@ export class AsrSession extends EventEmitter {
   }
 
   private connect(generation: number): void {
-    if (!this.credentials.appId || !this.credentials.accessToken) {
-      this.failAndCleanup("缺少火山引擎 App ID 或 Access Token");
+    const hasApiKey = Boolean(this.credentials.apiKey);
+    const hasLegacyCredentials = Boolean(
+      this.credentials.appId && this.credentials.accessToken,
+    );
+    if (!hasApiKey && !hasLegacyCredentials) {
+      this.failAndCleanup("缺少火山引擎 API Key，或 App ID + Access Token");
       return;
     }
 
@@ -380,6 +385,21 @@ export class AsrSession extends EventEmitter {
         this.finalEmitted
       ) return;
       this.failAndCleanup(`ASR 网络错误：${error.message}`, true);
+    });
+
+    socket.on("unexpected-response", (_request, response) => {
+      if (
+        this.socket !== socket ||
+        this.generation !== generation ||
+        this.finalEmitted
+      ) return;
+      const logId = response.headers["x-tt-logid"] || response.headers["x-tt-log-id"];
+      const logIdText = Array.isArray(logId) ? logId.join(",") : logId;
+      const statusCode = response.statusCode || "未知";
+      this.failAndCleanup(
+        `火山 ASR 握手失败：HTTP ${statusCode}${logIdText ? `，LogId ${logIdText}` : ""}`,
+        statusCode === 401 || statusCode === 403 || statusCode === 429,
+      );
     });
 
     socket.on("close", () => {

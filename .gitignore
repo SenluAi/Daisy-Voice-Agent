@@ -6,3 +6,7 @@ releases/
 daisy.env
 *.log
 assets/models/*.bin
+.deploy-asar-*/
+.deploy-asar-*
+*.7z
+*.dmg

@@ -1,14 +1,15 @@
 {
   "name": "Daisy",
-  "version": "1.6.0",
+  "version": "2.1.4",
   "description": "Daisy: AI voice assistant for macOS & Windows",
   "author": "Daisy",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "npm run build:native && tsc && npm run copy-renderer && npm run build:settings",
+    "build": "npm run build:native && tsc && npm run copy-renderer && npm run build:settings && npm run build:plugin",
     "build:native": "node scripts/build-native.cjs",
     "build:watch": "tsc --watch",
     "build:settings": "vite build --config vite.settings.config.ts",
+    "build:plugin": "tsc --project tsconfig.plugin.json && vite build --config vite.plugin.config.ts",
     "copy-renderer": "node scripts/copy-renderer.cjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
@@ -31,30 +32,55 @@
     "electron": "^42.5.0",
     "electron-builder": "^26.15.3",
     "patch-package": "^8.0.1",
+    "playwright-core": "1.64.0",
     "typescript": "^5.8.3",
     "vite": "^8.1.0"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-commands": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@picovoice/porcupine-node": "^4.0.2",
     "@tailwindcss/vite": "^4.3.2",
+    "ajv": "8.20.0",
     "dotenv": "^16.5.0",
+    "dsh-plugin": "1.6.2",
     "duck-duck-scrape": "^2.2.7",
     "electron-updater": "^6.8.9",
     "ffmpeg-static": "^5.3.0",
     "framer-motion": "^12.42.0",
+    "js-yaml": "5.4.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.42.2",
     "node-edge-tts": "^1.2.10",
     "node-global-key-listener": "^0.3.0",
+    "npm": "12.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "sherpa-onnx-node": "^1.13.6",
     "tailwindcss": "^4.3.2",
     "uiohook-napi": "^1.5.5",
+    "uuid": "^11.1.0",
     "ws": "^8.21.0"
+  },
+  "overrides": {
+    "dsh-plugin": {
+      "@deepseek-ai/cordis": "4.0.4"
+    }
   },
   "build": {
     "appId": "com.daisy.app",
     "productName": "Daisy",
+    "publish": {
+      "provider": "github",
+      "owner": "SenluAi",
+      "repo": "Daisy-Voice-Agent"
+    },
     "directories": {
       "output": "releases"
     },
@@ -62,6 +88,7 @@
       "dist/**/*",
       "assets/**/*",
       "package.json",
+      "docs/THIRD_PARTY_DSH.md",
       "!.env",
       "!.env.*",
       "!**/.env",
@@ -77,6 +104,8 @@
       "assets/bin/**",
       "assets/lib/**",
       "assets/models/**",
+      "node_modules/sherpa-onnx-node/**",
+      "node_modules/sherpa-onnx-win-x64/**",
       "node_modules/uiohook-napi/**",
       "node_modules/ffmpeg-static/**"
     ],
@@ -110,7 +139,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ]
     },
@@ -120,7 +151,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

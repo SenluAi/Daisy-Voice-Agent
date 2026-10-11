@@ -1,6 +1,7 @@
 import path from "node:path";
 import { BrowserWindow, shell } from "electron";
 import { log, logError } from "../utils/logger";
+import { IPC_CHANNELS } from "../ipc/channels";
 
 let settingsWindow: BrowserWindow | null = null;
 
@@ -72,4 +73,19 @@ export function createSettingsWindow(show = true): BrowserWindow {
 
 export function getSettingsWindow(): BrowserWindow | null {
   return settingsWindow;
+}
+
+export function showSettingsSection(section: "llm" | "tasks"): BrowserWindow {
+  const window = createSettingsWindow(true);
+  const navigate = () => {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.SETTINGS_NAVIGATE, section);
+    }
+  };
+  if (window.webContents.isLoading()) {
+    window.webContents.once("did-finish-load", navigate);
+  } else {
+    navigate();
+  }
+  return window;
 }

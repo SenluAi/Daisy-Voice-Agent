@@ -22,7 +22,7 @@ async function testLLM() {
   console.log("Testing DeepSeek LLM...");
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.AI_TRANSLATION_API_KEY;
   const baseUrl = (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
 
   if (!apiKey) {
     console.log("LLM skipped: no API key");

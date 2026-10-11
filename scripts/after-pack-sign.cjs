@@ -9,6 +9,22 @@ const path = require("node:path");
  * not claimed here: it requires the vendor's paid Apple Developer membership.
  */
 exports.default = async function afterPack(context) {
+  // Preserve npm's bundled dependency tree: the normal packer prunes nested node_modules.
+  const resources = context.electronPlatformName === "darwin"
+    ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources")
+    : path.join(context.appOutDir, "resources");
+  const installer = path.join(resources, "plugin-installer", "npm");
+  fs.mkdirSync(path.dirname(installer), { recursive: true });
+  fs.cpSync(path.dirname(require.resolve("npm/package.json")), installer, { recursive: true });
+  if (!fs.existsSync(path.join(installer, "node_modules", "graceful-fs", "package.json"))) {
+    throw new Error("The bundled plugin installer is missing its dependencies");
+  }
+  // npm installs peer packages locally, but the release collector can omit them.
+  const asar = require("@electron/asar");
+  for (const name of ["dsh-llm", "dsh-commands", "dsh-credentials", "dsh-attachment", "dsh-scope", "dsh-session"]) {
+    try { asar.extractFile(path.join(resources, "app.asar"), path.join("node_modules", "@deepseek-ai", name, "package.json")); }
+    catch { throw new Error(`The plugin host release is missing its runtime dependency: @deepseek-ai/${name}`); }
+  }
   if (context.electronPlatformName !== "darwin") return;
 
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
