@@ -27,6 +27,7 @@ import { describeExternalUrlForLog, openDefaultBrowser, openExternalUrl } from "
 import { diagnoseWindowsApp, resolveAndLaunchWindowsApp, resolveWindowsApp, type AppLaunchTarget } from "./windowsAppResolver";
 import { withFloatMousePassthrough } from "../windows/floatWindow";
 import { commandScript, findPowerShell, runBackgroundPowerShell } from "./backgroundPowerShell";
+import { requireLicenseAccess, licenseOperationSignal, isLicenseAccessAllowed } from "../license/access";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -49,7 +50,7 @@ function expandPath(p: string): string {
  * the -EncodedCommand base64 pattern that matches common malware heuristics.
  */
 async function runPowerShell(script: string, options: { timeout?: number } = {}): Promise<string> {
-  const { stdout } = await runBackgroundPowerShell(script, { timeout: options.timeout ?? 15000 });
+  const { stdout } = await runBackgroundPowerShell(script, { timeout: options.timeout ?? 15000, signal: licenseOperationSignal() });
   return stdout.trim();
 }
 
@@ -541,6 +542,7 @@ async function runCommunicationHelper(command: string, encodedArgs: string[]): P
       timeout: 4000,
       windowsHide: true,
       maxBuffer: 1024 * 1024,
+      signal: licenseOperationSignal(),
     });
     return stdout.trim();
   } catch (error) {
@@ -886,7 +888,7 @@ async function runNativeMouseAction(
   const startedAt = Date.now();
   // Only absence permits fallback. An error may occur after input; never replay it.
   const { stdout } = await execFileAsync(helperPath, ["mouse-action", action, String(x), String(y), String(endX), String(endY), direction], {
-    timeout: 4000, windowsHide: true, maxBuffer: 64 * 1024,
+    timeout: 4000, windowsHide: true, maxBuffer: 64 * 1024, signal: licenseOperationSignal(),
   });
   if (stdout.trim() !== "MOUSE_EXECUTED") throw new Error("原生鼠标结果不确定，未重复执行，请截图检查");
   log(`[task-perf] native-mouse action=${action} elapsedMs=${Date.now() - startedAt}`);
@@ -1115,7 +1117,7 @@ export async function downloadMedia(url: string, type: string = "video", destina
 
     const cmd = `"${ytdlpPath}" ${args} -P "${saveDir}" "${url}"`;
     log(`[windows] downloadMedia: running ${cmd}`);
-    const { stdout } = await execAsync(cmd, { maxBuffer: 1024 * 1024 * 16, timeout: 600000 });
+    const { stdout } = await execAsync(cmd, { maxBuffer: 1024 * 1024 * 16, timeout: 600000, windowsHide: true, signal: licenseOperationSignal() });
 
     const destMatch = stdout.match(/Destination:\s*(.+)/i) || stdout.match(/Merging formats into\s*"(.*?)"/i);
     const filename = destMatch?.[1] ? path.basename(destMatch[1].replace(/"/g, "").trim()) : "";
@@ -1143,12 +1145,13 @@ export async function listDirectory(dirPath: string): Promise<string> {
 export async function runShellCommand(command: string, shell: "cmd" | "powershell" = "cmd"): Promise<string> {
   try {
     const { stdout, stderr } = shell === "powershell"
-      ? await runBackgroundPowerShell(commandScript(command), { cwd: os.homedir(), executable: findPowerShell() })
+      ? await runBackgroundPowerShell(commandScript(command), { cwd: os.homedir(), executable: findPowerShell(), signal: licenseOperationSignal() })
       : await execAsync(command, {
       maxBuffer: 1024 * 1024 * 5,
       timeout: 30000,
       cwd: os.homedir(),
       windowsHide: true,
+      signal: licenseOperationSignal(),
     });
     const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : "")).trim();
     const truncated = output.length > 5000 ? output.slice(0, 5000) + "\n...(输出过长，已截断)" : output;
@@ -1165,6 +1168,7 @@ export async function setTimer(seconds: number): Promise<string> {
     const secs = seconds % 60;
     const desc = mins > 0 ? `${mins}分${secs > 0 ? secs + "秒" : ""}` : `${secs}秒`;
     setTimeout(() => {
+      if (!isLicenseAccessAllowed()) return;
       try {
         new Notification({ title: "Daisy 计时器", body: `计时器完成：${desc}`, silent: false }).show();
       } catch (err) {
@@ -1204,6 +1208,7 @@ export async function setAlarm(time: string, label?: string): Promise<string> {
       // Repeat the notification 5 times to mimic an alarm.
       for (let i = 0; i < 5; i++) {
         setTimeout(() => {
+          if (!isLicenseAccessAllowed()) return;
           try {
             new Notification({ title: "Daisy 闹钟", body: `${label || "闹钟"}：${alarmTimeStr}`, silent: false }).show();
           } catch (err) {
@@ -1435,6 +1440,7 @@ export async function convertDocument(source: string, target: string): Promise<s
 // ============================================================================
 
 export async function executeTool(name: string, argsJson: string): Promise<string> {
+  requireLicenseAccess();
   try {
     const args = JSON.parse(argsJson || "{}") as Record<string, unknown>;
     log(`[windows] executeTool: ${name} with args ${argsJson}`);

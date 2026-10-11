@@ -8,6 +8,7 @@ import { log, logError } from "../utils/logger";
 import { matchApp } from "../command/router";
 import { getBundledBin } from "../config/env";
 import { officeDocument } from "./officecli";
+import { requireLicenseAccess, licenseOperationSignal } from "../license/access";
 
 const execAsync = promisify(exec);
 function expandPath(p: string): string {
@@ -19,7 +20,7 @@ function expandPath(p: string): string {
 
 export async function runAppleScript(script: string): Promise<string> {
   try {
-    const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
+    const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { signal: licenseOperationSignal() });
     return stdout.trim();
   } catch (error) {
     throw new Error(`AppleScript 执行失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -634,6 +635,7 @@ export async function runShellCommand(command: string): Promise<string> {
       maxBuffer: 1024 * 1024 * 5,
       timeout: 30000,
       cwd: os.homedir(),
+      signal: licenseOperationSignal(),
     });
     const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : "")).trim();
     const truncated = output.length > 5000 ? output.slice(0, 5000) + "\n...(输出过长，已截断)" : output;
@@ -1382,6 +1384,7 @@ function toSeconds(t: string): number {
 }
 
 export async function executeTool(name: string, argsJson: string): Promise<string> {
+  requireLicenseAccess();
   try {
     const args = JSON.parse(argsJson || "{}") as Record<string, unknown>;
     log(`executeTool: ${name} with args ${argsJson}`);

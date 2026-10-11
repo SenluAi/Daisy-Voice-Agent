@@ -75,7 +75,7 @@ export function getSettingsWindow(): BrowserWindow | null {
   return settingsWindow;
 }
 
-export function showSettingsSection(section: "llm" | "tasks"): BrowserWindow {
+export function showSettingsSection(section: "llm" | "tasks" | "license"): BrowserWindow {
   const window = createSettingsWindow(true);
   const navigate = () => {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {

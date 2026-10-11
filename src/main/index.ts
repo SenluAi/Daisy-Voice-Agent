@@ -48,6 +48,8 @@ import {
 import { log, logDebug, logError } from "./utils/logger";
 import { announceToUser, cancelAnnouncements } from "./utils/announce";
 import { initializeExtensions, getExtensionManager, closeExtensions, refreshExtensionSpeechProviders } from "./extensions/manager";
+import { registerLicenseIpc, initializeLicense, closeLicense } from "./license";
+import { isLicenseAccessAllowed, requireLicenseAccess, stopLicensedOperations, resumeLicensedOperations } from "./license/access";
 import { PluginConversationQueue } from "./extensions/conversationQueue";
 import type { ExtensionAction } from "../shared/extensions";
 
@@ -209,10 +211,12 @@ let automationTaskInProgress = 0;
 let shortcutSuppressedByAutomation = false;
 let finderSelectionCapture: { sessionId: number; promise: Promise<FinderSelectionResult> } | null = null;
 let runtimeStarted = false;
+let licensedRuntimeActive = false;
+let licensePromptShown = false;
 let extensionConversationState = "idle";
 let activePluginPromptId: string | undefined;
 const pluginConversationQueue = new PluginConversationQueue(
-  () => runtimeStarted && !isScreenLocked && !isSessionActive && !voiceAwaitingFinal && !getIsRecording()
+  () => runtimeStarted && isLicenseAccessAllowed() && !isScreenLocked && !isSessionActive && !voiceAwaitingFinal && !getIsRecording()
     && !isSpeaking && automationTaskInProgress === 0 && ["idle", "error"].includes(extensionConversationState),
   ({ pluginId, text }) => {
     abortAllTasks();
@@ -242,14 +246,15 @@ if (!hasSingleInstanceLock) {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   log("App ready");
 
   // Register IPC before starting the runtime.
   setupIpc();
+  registerLicenseIpc();
 
   initializeDockVisibility(config.showDockIcon, persistDockVisibilityPreference);
-  startRuntime(false);
+  await initializeLicense(handleLicenseChange);
 
   // macOS-specific menu + Dock setup (after runtime start for dev).
   if (process.platform === "darwin") {
@@ -333,6 +338,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
+  if (!ensureAssistantAccess()) return;
   if (!getFloatWindow() || getFloatWindow()!.isDestroyed()) {
     createFloatWindow();
   }
@@ -340,6 +346,7 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  closeLicense();
   pluginConversationQueue.close();
   closeExtensions();
   if (accessibilityAuthorizationPoll) {
@@ -381,6 +388,7 @@ function logMemStep(stepName: string): void {
 }
 
 function startRuntime(openSettingsAfterStart = false): void {
+  if (!ensureAssistantAccess()) return;
   if (runtimeStarted) return;
   runtimeStarted = true;
   log("Initializing...");
@@ -454,6 +462,53 @@ function startRuntime(openSettingsAfterStart = false): void {
   // On first packaged Windows launch, show settings so the user can configure services.
   if (openSettingsAfterStart || shouldShowInitialWindowsSettings) {
     createSettingsWindow(true);
+  }
+}
+
+function ensureAssistantAccess(): boolean {
+  if (isLicenseAccessAllowed()) return true;
+  showSettingsSection("license");
+  return false;
+}
+
+function handleLicenseChange(): void {
+  const allowed = isLicenseAccessAllowed();
+  if (allowed && !licensedRuntimeActive) {
+    resumeLicensedOperations();
+    licensedRuntimeActive = true;
+    licensePromptShown = false;
+    if (!runtimeStarted) startRuntime();
+    else {
+      setupShortcut();
+      setupWakeWord();
+      initializeExtensions(app.getPath("userData"), prompt => pluginConversationQueue.enqueue(prompt), id => {
+        pluginConversationQueue.cancel(id);
+        if (activePluginPromptId === id) stopCurrentTask();
+      });
+    }
+  } else if (!allowed) {
+    stopLicensedOperations();
+    if (licensedRuntimeActive) {
+      licensedRuntimeActive = false;
+      pluginConversationQueue.cancel();
+      abortAllTasks();
+      globalShortcut?.destroy();
+      globalShortcut = null;
+      wakeWordMonitor?.stop();
+      wakeWordMonitor = null;
+      setWakeWordCaptureEnabled(false);
+      closeExtensions();
+      getHistoryWindow()?.close();
+      hideFloatWindow();
+      hidePanelWindow();
+      if (shortcutListenerRestartTimer) clearTimeout(shortcutListenerRestartTimer);
+      shortcutListenerRestartTimer = null;
+      log("License access locked; assistant runtime stopped");
+    }
+    if (!licensePromptShown) {
+      licensePromptShown = true;
+      showSettingsSection("license");
+    }
   }
 }
 
@@ -608,7 +663,7 @@ function setupPowerMonitor(): void {
   powerMonitor.on("unlock-screen", () => {
     isScreenLocked = false;
     log("PowerMonitor: Screen unlocked. Resuming wake word monitor.");
-    if (wakeWordMonitor && config.wakeWord.enabled) {
+    if (isLicenseAccessAllowed() && wakeWordMonitor && config.wakeWord.enabled) {
       try {
         wakeWordMonitor.start();
         setWakeWordCaptureEnabled(true);
@@ -625,7 +680,7 @@ function setupWakeWord(): void {
   wakeWordMonitor = null;
   setWakeWordCaptureEnabled(false);
 
-  if (!config.wakeWord.enabled) {
+  if (!isLicenseAccessAllowed() || !config.wakeWord.enabled) {
     log("Wake word detection disabled");
     return;
   }
@@ -639,6 +694,7 @@ function setupWakeWord(): void {
   wakeWordMonitor = new WakeWordMonitor(config.wakeWord.keyword);
 
   wakeWordMonitor.on("wake", () => {
+    if (!ensureAssistantAccess()) return;
     log("Wake word detected! Starting voice listening...");
 
     // If already in voice listening mode, ignore (don't re-trigger)
@@ -664,6 +720,7 @@ function setupWakeWord(): void {
 function setupAudio(): void {
   initAudioRecorder(
     (buffer) => {
+      if (!isLicenseAccessAllowed()) return;
       asrSession?.feedPcm(buffer);
       wakeWordMonitor?.feedPcm(buffer);
       feedContinuousConversationPcm(buffer);
@@ -726,6 +783,7 @@ function restartShortcutListenerAfterFailure(failedListener: GlobalShortcut, mes
 }
 
 function setupShortcut(): void {
+  if (!isLicenseAccessAllowed()) return;
   log("Setting up global shortcut");
   const previousShortcut = globalShortcut;
   globalShortcut = null;
@@ -1043,6 +1101,7 @@ function resumeContinuousConversationWindow(reason: string): boolean {
 }
 
 function finishTurnWithContinuousWindow(reason: string): void {
+  if (!ensureAssistantAccess()) return;
   isSessionActive = false;
   continuousFollowUpRemainingMs = 0;
   if (!startContinuousConversationWindow(reason, config.wakeWord.startListeningTimeoutMs, true)) {
@@ -1298,6 +1357,7 @@ function abortAllTasks(): void {
 }
 
 function wakeAndStartListening(): void {
+  if (!ensureAssistantAccess()) return;
   if (!isLlmConfigured()) {
     log("Cannot start session: missing LLM API key");
     updateState("error", "请先配置大模型 API Key");
@@ -1505,6 +1565,7 @@ function endListening(): void {
 }
 
 function startVoiceListening(startListeningTimeoutOverrideMs?: number): void {
+  if (!ensureAssistantAccess()) return;
   log("Starting voice listening mode");
   const asrUnavailable = getAsrUnavailableMessage();
   if (asrUnavailable) {
@@ -1808,6 +1869,7 @@ function endVoiceListening(): void {
 }
 
 function handleUserInput(text: string): void {
+  if (!ensureAssistantAccess()) return;
   if (isStopTaskCommand(text)) {
     stopCurrentTask();
     return;
@@ -1933,6 +1995,7 @@ async function handleScreenVisionRequest(text: string, inputSessionId: number): 
 }
 
 async function handleDroppedFiles(paths: string[]): Promise<void> {
+  if (!ensureAssistantAccess()) return;
   if (!isLlmConfigured()) {
     log("Cannot read dropped files: missing LLM API key");
     updateState("error", "请先配置大模型 API Key");
@@ -2247,6 +2310,7 @@ async function synthesizeRemaining(chunks: string[], sessionId: number): Promise
 }
 
 function speakResponse(text: string): void {
+  if (!ensureAssistantAccess()) return;
   log(`Speaking response, length: ${text.length}`);
   log(`TTS text: ${text.substring(0, 100)}${text.length > 100 ? "..." : ""}`);
   if (!text || !text.trim()) {
@@ -2288,6 +2352,7 @@ function speakResponse(text: string): void {
 }
 
 function playTTSFile(filePath: string): void {
+  if (!ensureAssistantAccess()) return;
   log(`[TTS_PERF] IPC Sent (queued): ${filePath}`);
   unmuteSystemOnly();
   currentPlayingFile = filePath;
@@ -2730,6 +2795,7 @@ function setupIpc(): void {
   ipcHandlersRegistered = true;
 
   ipcMain.handle(IPC_CHANNELS.EXTENSIONS_REQUEST, (event, action: ExtensionAction, input: unknown) => {
+    requireLicenseAccess();
     const settings = getSettingsWindow();
     if (!settings || event.sender.id !== settings.webContents.id || event.senderFrame !== event.sender.mainFrame) {
       throw new Error("插件管理仅允许 Daisy 设置窗口调用。");
@@ -2751,7 +2817,7 @@ function setupIpc(): void {
   });
 
   ipcMain.on(IPC_CHANNELS.SEND_TEXT, (_event, text: string) => {
-    if (!runtimeStarted) return;
+    if (!ensureAssistantAccess() || !runtimeStarted) return;
     const cleanText = String(text || "").trim();
     if (!cleanText) return;
     if (isStopTaskCommand(cleanText)) {
@@ -2766,7 +2832,7 @@ function setupIpc(): void {
   });
 
   ipcMain.on(IPC_CHANNELS.FILES_DROPPED, (_event, paths: string[]) => {
-    if (!runtimeStarted) return;
+    if (!ensureAssistantAccess() || !runtimeStarted) return;
     if (!Array.isArray(paths)) return;
     void handleDroppedFiles(paths);
   });
@@ -2783,6 +2849,7 @@ function setupIpc(): void {
   });
 
   ipcMain.on(IPC_CHANNELS.OPEN_HISTORY, () => {
+    if (!ensureAssistantAccess()) return;
     createHistoryWindow();
   });
 
@@ -2965,6 +3032,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_event, cfg: Record<string, string>) => {
+    requireLicenseAccess();
     try {
       const envPath = getWritableEnvPath();
 
@@ -3141,10 +3209,12 @@ function setupIpc(): void {
   });
 
   ipcMain.on(IPC_CHANNELS.SHERPA_DOWNLOAD, () => {
+    if (!ensureAssistantAccess()) return;
     downloadSherpaOnnxModel();
   });
 
   ipcMain.on(IPC_CHANNELS.SHORTCUT_CAPTURE, (_event, requestedMode?: unknown) => {
+    if (!ensureAssistantAccess()) return;
     if (globalShortcut) {
       globalShortcut.startCapture(requestedMode === "single" ? "single" : "combo");
     }
@@ -3165,6 +3235,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTOLAUNCH_SET, (_event, enabled: boolean) => {
+    requireLicenseAccess();
     app.setLoginItemSettings({ openAtLogin: enabled });
     config.autoLaunch = enabled;
     log(`Auto launch set to: ${enabled}`);
@@ -3175,6 +3246,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.HISTORY_CLEAR, () => {
+    requireLicenseAccess();
     conversationHistory = [];
     saveConversationHistory();
     broadcastConversationHistory();
@@ -3205,6 +3277,7 @@ function setupIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.LONG_TERM_MEMORY_GET, () => getLongTermMemorySnapshot());
   ipcMain.handle(IPC_CHANNELS.LONG_TERM_MEMORY_DELETE, (_event, ids: unknown) => {
+    requireLicenseAccess();
     if (!Array.isArray(ids)) return 0;
     return deleteLongTermMemories(ids.filter((id): id is string => typeof id === "string"));
   });
@@ -3277,11 +3350,19 @@ function setupIpc(): void {
     const floatWin = getFloatWindow();
     const isFloatWindow = Boolean(floatWin && !floatWin.isDestroyed() && floatWin.webContents === _event.sender);
 
+    if (!isLicenseAccessAllowed() && !selection && !isInput) {
+      Menu.buildFromTemplate([
+        { label: "授权激活", click: () => showSettingsSection("license") },
+        { label: "退出 Daisy", click: () => app.quit() },
+      ]).popup({ window: win });
+      return;
+    }
+
     if (isFloatWindow && !selection && !isInput) {
       Menu.buildFromTemplate([
         {
           label: "停止任务",
-          enabled: runtimeStarted,
+          enabled: runtimeStarted && isLicenseAccessAllowed(),
           click: stopCurrentTask,
         },
         { type: "separator" },

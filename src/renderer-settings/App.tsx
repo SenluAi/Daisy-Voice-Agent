@@ -32,6 +32,8 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { IdleOrb } from "./components/IdleOrb";
 import ExtensionsPanel from "./ExtensionsPanel";
+import LicensePanel from "./LicensePanel";
+import { KeyRound as LicenseIcon } from "lucide-react";
 
 interface SettingsState {
   DEEPSEEK_API_KEY: string;
@@ -293,6 +295,8 @@ export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
 
   const [activeSection, setActiveSection] = useState<string>("llm");
+  const [licenseAccess, setLicenseAccess] = useState<Awaited<ReturnType<Window["diriAPI"]["licenseStatus"]>> | null>(null);
+  const licenseAllowed = licenseAccess?.allowed === true;
   const [sherpaInstalled, setSherpaInstalled] = useState<boolean>(false);
   const [wechatInstalled, setWechatInstalled] = useState<boolean>(false);
   const [sherpaModelStatus, setSherpaModelStatus] = useState<
@@ -322,12 +326,12 @@ export default function App() {
   const [updateMessage, setUpdateMessage] = useState<string>("");
   const [updateDownloadPercent, setUpdateDownloadPercent] = useState<number>(0);
 
-  const isLLMActive = settings.DEEPSEEK_API_KEY.trim().length > 5;
-  const isSherpaActive = sherpaInstalled && sherpaModelStatus === "downloaded";
-  const isAsrActive = settings.ASR_LOCAL_SHERPA_FIRST
+  const isLLMActive = licenseAllowed && settings.DEEPSEEK_API_KEY.trim().length > 5;
+  const isSherpaActive = licenseAllowed && sherpaInstalled && sherpaModelStatus === "downloaded";
+  const isAsrActive = licenseAllowed && (settings.ASR_LOCAL_SHERPA_FIRST
     ? (settings.ASR_PRIMARY_PROVIDER === "wechat" ? wechatInstalled : isSherpaActive)
-    : settings.VOLCENGINE_API_KEY.trim().length > 5;
-  const isFirecrawlActive = settings.FIRECRAWL_API_KEY.trim().length > 0;
+    : settings.VOLCENGINE_API_KEY.trim().length > 5);
+  const isFirecrawlActive = licenseAllowed && settings.FIRECRAWL_API_KEY.trim().length > 0;
 
   const statusTimerRef = useRef<number | null>(null);
   const showTemporaryStatus = (text: string, type: "success" | "error" | "info") => {
@@ -339,8 +343,24 @@ export default function App() {
   };
 
   useEffect(() => window.diriAPI.onSettingsNavigate((section) => {
-    setActiveSection(section);
-  }), []);
+    setActiveSection(licenseAllowed ? section : "license");
+  }), [licenseAllowed]);
+
+  useEffect(() => {
+    let disposed = false;
+    let receivedEvent = false;
+    const apply = (status: NonNullable<typeof licenseAccess>) => {
+      if (disposed) return;
+      setLicenseAccess(status);
+      if (!status.allowed) {
+        setActiveSection("license");
+        setIsHistoryOpen(false);
+      }
+    };
+    const unsubscribe = window.diriAPI.onLicenseChanged(status => { receivedEvent = true; apply(status); });
+    void window.diriAPI.licenseStatus().then(status => { if (!receivedEvent) apply(status); });
+    return () => { disposed = true; unsubscribe(); };
+  }, []);
 
   // ==================== 加载配置 ====================
   useEffect(() => {
@@ -798,7 +818,8 @@ export default function App() {
               { id: "tts", label: "语音播报", icon: Volume2 },
               { id: "memory", label: "长期记忆", icon: Brain },
               { id: "system", label: "系统设置", icon: Settings },
-            ].map((tab) => {
+              { id: "license", label: "授权激活", icon: LicenseIcon },
+            ].filter(tab => licenseAllowed || tab.id === "license").map((tab) => {
               const IconComp = tab.icon;
               const isModelTab = tab.id === "model";
               const isActive = isModelTab
@@ -841,6 +862,7 @@ export default function App() {
                   <p role="alert" className="text-[12px] font-medium text-rose-500">{statusMessage.text}</p>
                 )}
                 {activeSection === "extensions" && <ExtensionsPanel />}
+            {activeSection === "license" && <LicensePanel />}
                 {MODEL_CONFIG_TABS.some((item) => item.id === activeSection) && (
                   <div className="flex flex-col gap-3">
                     <div className="px-1">
@@ -1646,7 +1668,7 @@ export default function App() {
           </main>
 
           {/* Footer */}
-          {!["tasks", "extensions"].includes(activeSection) && <footer className="h-[72px] liquid-glass rounded-[22px] px-5 flex items-center justify-between gap-4 mr-2 shrink-0 mt-4">
+          {!["tasks", "extensions", "license"].includes(activeSection) && <footer className="h-[72px] liquid-glass rounded-[22px] px-5 flex items-center justify-between gap-4 mr-2 shrink-0 mt-4">
             <div className="flex-1 min-w-0 pr-4">
               <AnimatePresence mode="wait">
                 {statusMessage.text && (
@@ -1672,7 +1694,7 @@ export default function App() {
                 <History className="w-4 h-4 text-emerald-600" />
                 <span>对话历史</span>
               </button>}
-              {!["extensions", "memory", "tasks"].includes(activeSection) && <button onClick={handleSaveSettings} disabled={!configLoaded}
+              {!["extensions", "memory", "tasks", "license"].includes(activeSection) && <button onClick={handleSaveSettings} disabled={!configLoaded}
                 className="px-6 py-3 rounded-full btn-glass-blue cursor-pointer text-[13px]">
                 <span>保存设置</span>
               </button>}

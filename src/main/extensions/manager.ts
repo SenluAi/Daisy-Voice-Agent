@@ -15,6 +15,7 @@ import { logError } from "../utils/logger";
 import { harnessMcpSnapshot, applyMcpPatch, MCP_PACKAGE } from "./harnessMcp";
 import { readBundle, resolveBundleConfig } from "./bundle";
 import { ManagedService } from "./managedService";
+import { requireLicenseAccess } from "../license/access";
 
 interface ManagedPlugin extends PluginEntry { directory: string; config?: Record<string, unknown> }
 const PACKAGE_NAME = /^(?:@[a-z0-9_.-]+\/)?[a-z0-9_.-]+$/;
@@ -70,6 +71,7 @@ export class ExtensionManager {
     this.skills = new SkillStore(root);
     this.mcp = new McpManager(root);
     this.host.setHostHandler(async (pluginId, operation, payload) => {
+      requireLicenseAccess();
       if (operation === "mcp.snapshot" || operation === "mcp.apply") {
         const plugin = this.plugins.find(x => x.id === pluginId);
         if (plugin?.name !== "@js2hou/dsh-mcp-manager") throw new Error("此插件没有 MCP 管理权限。");
@@ -106,6 +108,7 @@ export class ExtensionManager {
   }
 
   start(): Promise<void> {
+    requireLicenseAccess();
     if (!this.startup) this.startup = (async () => {
       await this.mcp.start();
       for (const plugin of this.plugins) {
@@ -317,6 +320,7 @@ export class ExtensionManager {
   }
 
   async request<K extends ExtensionAction>(action: K, input?: ExtensionRequests[K]["input"]): Promise<ExtensionRequests[K]["output"]> {
+    requireLicenseAccess();
     if (this.closed) throw new Error("插件管理器已关闭。");
     if (action === "catalog") return this.catalog.query((input || {}) as ExtensionRequests["catalog"]["input"]) as Promise<ExtensionRequests[K]["output"]>;
     if (action === "snapshot") return this.snapshot() as ExtensionRequests[K]["output"];
@@ -405,6 +409,7 @@ export class ExtensionManager {
   }
 
   async execute(tool: string, json: string, signal?: AbortSignal): Promise<string> {
+    requireLicenseAccess();
     const args = JSON.parse(json || "{}");
     if (tool === "read_skill") {
       const id = String(args.id || "");
@@ -454,5 +459,5 @@ export function getExtensionManager(): ExtensionManager {
 export function extensionPrompt(): string {
   try { return manager?.prompt() || ""; } catch { return ""; }
 }
-export function closeExtensions(): void { manager?.close(); }
+export function closeExtensions(): void { const previous = manager; manager = undefined; previous?.close(); }
 export function refreshExtensionSpeechProviders(): void { manager?.refreshSpeechProviders(); }

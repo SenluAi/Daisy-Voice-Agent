@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC_CHANNELS } from "../main/ipc/channels";
 import type { ExtensionRequestAPI } from "../shared/extensions";
+import type { LicenseAccessStatus } from "../shared/license";
 
 export interface TaskActivitySnapshot {
   updatedAt: number;
@@ -30,6 +31,23 @@ export interface LongTermMemorySnapshot {
   counts: Record<"profile" | "preference" | "task", number>;
 }
 
+export interface LicenseStatus extends LicenseAccessStatus {
+  activated: boolean;
+  deviceCode: string;
+  licenseId?: string;
+  customer?: string;
+  issuedAt?: string;
+  edition?: "full";
+  problem?: string;
+  filePath: string;
+}
+
+export interface LicenseActivateResult {
+  ok: boolean;
+  message: string;
+  status: LicenseStatus;
+}
+
 export interface DiriAPI {
   extensionsRequest: ExtensionRequestAPI;
   // Send commands to main
@@ -40,7 +58,7 @@ export interface DiriAPI {
   getPathForFile: (file: File) => string;
   openSettings: () => void;
   closeSettings: () => void;
-  onSettingsNavigate: (callback: (section: "llm" | "tasks") => void) => () => void;
+  onSettingsNavigate: (callback: (section: "llm" | "tasks" | "license") => void) => () => void;
   openHistory: () => void;
   closeHistory: () => void;
   getConfig: () => Promise<Record<string, string>>;
@@ -95,6 +113,13 @@ export interface DiriAPI {
   deleteLongTermMemories: (ids: string[]) => Promise<number>;
 
   // App update
+  // 授权激活
+  licenseStatus: () => Promise<LicenseStatus>;
+  licenseActivate: (redeemCode: string) => Promise<LicenseActivateResult>;
+  licenseClear: () => Promise<LicenseStatus>;
+  licenseRefresh: () => Promise<LicenseStatus>;
+  onLicenseChanged: (callback: (status: LicenseStatus) => void) => () => void;
+
   getAppVersion: () => Promise<string>;
   checkForUpdate: () => Promise<{
     updateAvailable: boolean;
@@ -145,14 +170,14 @@ function createListener<T>(channel: string) {
   };
 }
 
-let latestSettingsSection: "llm" | "tasks" | null = null;
-const settingsSectionListeners = new Set<(section: "llm" | "tasks") => void>();
-ipcRenderer.on(IPC_CHANNELS.SETTINGS_NAVIGATE, (_event, section: "llm" | "tasks") => {
+let latestSettingsSection: "llm" | "tasks" | "license" | null = null;
+const settingsSectionListeners = new Set<(section: "llm" | "tasks" | "license") => void>();
+ipcRenderer.on(IPC_CHANNELS.SETTINGS_NAVIGATE, (_event, section: "llm" | "tasks" | "license") => {
   latestSettingsSection = section;
   for (const listener of settingsSectionListeners) listener(section);
 });
 
-function onSettingsNavigate(callback: (section: "llm" | "tasks") => void): () => void {
+function onSettingsNavigate(callback: (section: "llm" | "tasks" | "license") => void): () => void {
   settingsSectionListeners.add(callback);
   if (latestSettingsSection) queueMicrotask(() => callback(latestSettingsSection!));
   return () => settingsSectionListeners.delete(callback);
@@ -200,6 +225,12 @@ const api: DiriAPI = {
   getTaskActivity: () => ipcRenderer.invoke(IPC_CHANNELS.TASK_ACTIVITY_GET),
   getLongTermMemory: () => ipcRenderer.invoke(IPC_CHANNELS.LONG_TERM_MEMORY_GET),
   deleteLongTermMemories: (ids: string[]) => ipcRenderer.invoke(IPC_CHANNELS.LONG_TERM_MEMORY_DELETE, ids),
+
+  licenseStatus: () => ipcRenderer.invoke(IPC_CHANNELS.LICENSE_STATUS),
+  licenseActivate: (redeemCode: string) => ipcRenderer.invoke(IPC_CHANNELS.LICENSE_ACTIVATE, redeemCode),
+  licenseClear: () => ipcRenderer.invoke(IPC_CHANNELS.LICENSE_CLEAR),
+  licenseRefresh: () => ipcRenderer.invoke(IPC_CHANNELS.LICENSE_REFRESH),
+  onLicenseChanged: createListener<LicenseStatus>(IPC_CHANNELS.LICENSE_CHANGED),
 
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
   checkForUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),

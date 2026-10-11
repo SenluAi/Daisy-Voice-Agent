@@ -1,5 +1,23 @@
 // diriAPI 类型（跟 preload/index.ts 里的 DiriAPI 对齐）
 import type { ExtensionRequestAPI } from "../shared/extensions";
+import type { LicenseAccessStatus } from "../shared/license";
+export interface LicenseStatus extends LicenseAccessStatus {
+  activated: boolean;
+  deviceCode: string;
+  licenseId?: string;
+  customer?: string;
+  issuedAt?: string;
+  edition?: "full";
+  problem?: string;
+  filePath: string;
+}
+
+export interface LicenseActivateResult {
+  ok: boolean;
+  message: string;
+  status: LicenseStatus;
+}
+
 export interface DiriAPI {
   extensionsRequest: ExtensionRequestAPI;
   startRecording: () => void;
@@ -7,7 +25,7 @@ export interface DiriAPI {
   sendText: (text: string) => void;
   openSettings: () => void;
   closeSettings: () => void;
-  onSettingsNavigate: (cb: (section: "llm" | "tasks") => void) => () => void;
+  onSettingsNavigate: (cb: (section: "llm" | "tasks" | "license") => void) => () => void;
   openHistory: () => void;
   closeHistory: () => void;
   getConfig: () => Promise<Record<string, string>>;
@@ -85,6 +103,12 @@ export interface DiriAPI {
   deleteLongTermMemories: (ids: string[]) => Promise<number>;
 
   // App update
+  licenseStatus: () => Promise<LicenseStatus>;
+  licenseActivate: (redeemCode: string) => Promise<LicenseActivateResult>;
+  licenseClear: () => Promise<LicenseStatus>;
+  licenseRefresh: () => Promise<LicenseStatus>;
+  onLicenseChanged: (cb: (status: LicenseStatus) => void) => () => void;
+
   getAppVersion: () => Promise<string>;
   checkForUpdate: () => Promise<{
     updateAvailable: boolean;

@@ -71,4 +71,11 @@ export const IPC_CHANNELS = {
   UPDATE_DOWNLOAD_PROGRESS: "update:download-progress",
   UPDATE_INSTALL: "update:install",
 
+  // 授权激活
+  LICENSE_STATUS: "license:status",
+  LICENSE_ACTIVATE: "license:activate",
+  LICENSE_CLEAR: "license:clear",
+  LICENSE_REFRESH: "license:refresh",
+  LICENSE_CHANGED: "license:changed",
+
 } as const;

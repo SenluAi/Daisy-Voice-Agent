@@ -1,6 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
-import { claimRedeemCode } from "./_shared/ledger";
-import { issueActivationCode } from "./_shared/license";
+import { claimRedeemCode, normalizeRedeemCode } from "./_shared/ledger";
+import { issueActivationCode, normalizeDeviceCode } from "./_shared/license";
 
 function json(status: number, body: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -23,6 +23,13 @@ export default async (request: Request, context: Context): Promise<Response> => 
     return json(400, { message: "请求格式不正确" });
   }
   if (typeof body.redeemCode !== "string" || typeof body.deviceCode !== "string") {
+    return json(400, { message: "兑换码或设备码格式不正确" });
+  }
+  try {
+    normalizeRedeemCode(body.redeemCode);
+    normalizeDeviceCode(body.deviceCode);
+  } catch {
+    // 格式错误的输入属于客户端错误，不应归类为服务不可用。
     return json(400, { message: "兑换码或设备码格式不正确" });
   }
 

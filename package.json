@@ -1,6 +1,6 @@
 {
   "name": "Daisy",
-  "version": "2.1.4",
+  "version": "2.1.6",
   "description": "Daisy: AI voice assistant for macOS & Windows",
   "author": "Daisy",
   "main": "dist/main/index.js",

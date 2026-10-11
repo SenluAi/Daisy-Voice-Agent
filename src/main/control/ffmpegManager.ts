@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { requireLicenseAccess, licenseOperationSignal } from "../license/access";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -188,11 +189,14 @@ async function ensureFfmpeg(): Promise<string> {
 
 /** Ensure ffmpeg is installed, then run it with the given args. */
 export async function runFfmpeg(args: string[], timeout = FFMPEG_TIMEOUT_MS): Promise<string> {
+  requireLicenseAccess();
   const binaryPath = await ensureFfmpeg();
+  requireLicenseAccess();
   const { stdout, stderr } = await execFileAsync(binaryPath, args, {
     timeout,
     windowsHide: true,
     maxBuffer: 8 * 1024 * 1024,
+    signal: licenseOperationSignal(),
   });
   return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
 }

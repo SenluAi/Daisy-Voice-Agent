@@ -14,6 +14,7 @@ import { TaskOutcome } from "../automation/taskStateMachine";
 import { MAX_TASK_ROUNDS, TASK_ROUND_LIMIT_MESSAGE, describeToolOutcome, describeStepProgress, summarizeTaskProgress } from "../automation/taskReporting";
 import { waitForModelIO } from "../automation/modelWait";
 import { extensionPrompt, getExtensionManager } from "../extensions/manager";
+import { requireLicenseAccess } from "../license/access";
 
 const SILENT_ACTION_TOOLS = new Set([
   "screen_snapshot",
@@ -260,6 +261,7 @@ export class DeepSeekClient extends EventEmitter {
 
 
   async sendMessage(text: string, historyText?: string): Promise<void> {
+    requireLicenseAccess();
     this.aborted = false;
     this.chatLoopCount = 0;
     this.commandExecutionCounts.clear();
@@ -299,6 +301,7 @@ export class DeepSeekClient extends EventEmitter {
   }
 
   async sendImageMessage(text: string, imageDataUrl: string, historyText?: string): Promise<void> {
+    requireLicenseAccess();
     this.aborted = false;
     this.chatLoopCount = 0;
     this.commandExecutionCounts.clear();

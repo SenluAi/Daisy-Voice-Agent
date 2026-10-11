@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { requireLicenseAccess, licenseOperationSignal } from "../license/access";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -301,12 +302,16 @@ async function ensureOfficeCli(): Promise<string> {
 }
 
 async function runOfficeCli(args: string[], timeout = OFFICECLI_TIMEOUT_MS): Promise<string> {
+  requireLicenseAccess();
   const binaryPath = await ensureOfficeCli();
+  requireLicenseAccess();
   try {
     const { stdout, stderr } = await execFileAsync(binaryPath, args, {
       timeout,
       env: getOfficeCliEnvironment(),
       maxBuffer: 8 * 1024 * 1024,
+      windowsHide: true,
+      signal: licenseOperationSignal(),
     });
     return trimOutput(`${stdout}${stderr ? `\n${stderr}` : ""}`.trim());
   } catch (error) {

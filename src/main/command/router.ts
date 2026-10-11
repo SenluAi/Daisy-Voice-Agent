@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { log, logError } from "../utils/logger";
 import { getBundledBin } from "../config/env";
+import { requireLicenseAccess } from "../license/access";
 import { describeExternalUrlForLog, openDefaultBrowser, openExternalUrl } from "../control/openExternal";
 import { diagnoseWindowsApp, resolveAndLaunchWindowsApp, resolveWindowsApp, warmWindowsAppIndex } from "../control/windowsAppResolver";
 
@@ -1097,6 +1098,7 @@ async function switchAudioOutput(target: string): Promise<CommandResult> {
 
 // Parse user command and execute if it matches a local command pattern
 export async function tryLocalCommand(text: string): Promise<CommandResult> {
+  requireLicenseAccess();
   const normalized = text.trim().replace(/[\s,，。！!？?、~]+$/, "");
 
   // Diagnostics are intentionally handled before any command that can launch
