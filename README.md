@@ -5,7 +5,7 @@
 <h1 align="center">Daisy</h1>
 
 <p align="center">
-  <strong>支持 macOS 与 Windows 的语音优先 AI 桌面助手</strong>
+  <strong>支持 macOS 与 Windows 的语音优先 AI 桌面自动化助手</strong>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 
 ## Daisy 是什么？
 
-Daisy 是运行在桌面端的轻量语音助手：一个始终可调用的悬浮球，负责把一句自然语言变成实际操作或简洁回答。它不依赖固定命令词；你可以像和助手说话一样让它搜索资料、控制电脑、处理日程，或直接完成日常桌面任务。
+Daisy 是运行在电脑桌面端的轻量语音自动化助手：一个始终可调用的悬浮球，负责把一句自然语言变成实际操作或简洁回答。它不依赖固定命令词；你可以像和助手说话一样让它搜索资料、控制电脑、处理日程，或直接自动化完成日常桌面任务。
 
 所有模型与语音服务均由你自行配置。你的 API Key、Token 与个人设置只保存在本机，不会随仓库或安装包分发。
 
@@ -60,14 +60,14 @@ Daisy 是运行在桌面端的轻量语音助手：一个始终可调用的悬�
 
 - **macOS**：默认按住右侧 `Option` 键开始说话；
 - **Windows**：默认按住 `空格（Space）` 键开始说话；
-松开后 Daisy 自动结束录音、提交识别结果并开始处理。也可在设置中开启“嘿 Daisy”唤醒词。
+松开后 Daisy 自动结束录音、提交识别结果并开始处理。也可在设置中开启“你好 Daisy”唤醒词。
 
 ### 快速反馈，而不是黑箱等待
 
 悬浮球会即时反馈当前阶段：聆听、思考、执行操作、语音播报或空闲。需要安静看结果时，可点击悬浮球中断当前播报。
 
 ### 让网页搜索回到正确的网站
-
+。 
 “打开抖音搜索世界杯”不会退化为普通浏览器搜索；Daisy 会直接进入目标服务的站内搜索。对没有独立桌面应用的网站，例如视频号、红果短剧或夸克，Daisy 会直接打开其网页入口。
 
 ## 快速开始
@@ -87,7 +87,7 @@ Daisy 是运行在桌面端的轻量语音助手：一个始终可调用的悬�
 1. **AI 对话模型**：DeepSeek 或兼容 OpenAI 接口的模型配置；
 2. **语音识别**：火山引擎 / 豆包 ASR 的 App ID 与 Access Token；
 3. **语音播报**：默认使用 Microsoft Edge TTS，可在设置中调整；
-4. **可选唤醒词**：使用“嘿 Daisy”时，按提示配置本地 `whisper.cpp` 模型文件。
+4. **可选唤醒词**：使用“你好 Daisy”唤醒时，按提示配置本地 `Sherpa-onnx-Paraformer` 模型。
 
 ### 3. 授权系统权限
 
@@ -127,7 +127,7 @@ src/
 ├── main/       # 语音会话、ASR、TTS、工具执行、快捷键与系统控制（macOS / Windows）
 ├── preload/    # 主进程与渲染进程之间的受控通信层
 └── renderer/   # 悬浮球、音频采集与设置界面
-assets/         # 图标、各平台二进制依赖库（whisper-cli, SwitchAudioSource 等）与运行时资源
+assets/         # 图标、各平台二进制依赖库（Sherpa-onnx-Paraformer, SwitchAudioSource 等）与运行时资源
 ```
 
 ## 隐私与安全
@@ -143,4 +143,4 @@ assets/         # 图标、各平台二进制依赖库（whisper-cli, SwitchAudi
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE) 发布。Electron、whisper.cpp、yt-dlp 及其他第三方组件仍适用其各自的许可证。
+本项目采用 [MIT License](LICENSE) 发布。Electron、Sherpa-onnx-Paraformer、yt-dlp 及其他第三方组件仍适用其各自的许可证。
