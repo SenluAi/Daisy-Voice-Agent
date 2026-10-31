@@ -144,3 +144,11 @@ assets/         # 图标、各平台二进制依赖库（Sherpa-onnx-Paraformer,
 ## 许可证
 
 本项目采用 [MIT License](LICENSE) 发布。Electron、Sherpa-onnx-Paraformer、yt-dlp 及其他第三方组件仍适用其各自的许可证。
+
+---
+
+## 扫码获取 Daisy 3.0
+
+使用微信扫描二维码，添加微信后获取 Daisy 3.0 应用。
+
+<img src="assets/readme/wechat-qr.png" alt="微信二维码，扫码获取 Daisy 3.0 应用" width="240">
